@@ -25,6 +25,11 @@ def main():
 
     Generate focus-enhancing music using AI (Google Lyria) with
     neural entrainment modulation for improved concentration.
+
+    Quick Usage:\n
+        focus start --profile deep-work \n
+        focus start --duration 600  # 10 minute session \n
+        focus start --output session.wav \n
     """
     pass
 
@@ -86,7 +91,7 @@ def show_profiles():
     "--duration",
     type=int,
     default=None,
-    help="Session duration in seconds (default: unlimited)",
+    help="Session duration in seconds (minimum: 60, default: unlimited)",
 )
 @click.option(
     "--output",
@@ -118,10 +123,14 @@ def start_session(
 
         focus start --profile deep-work
 
-        focus start -p light-study --duration 60
+        focus start -p light-study --duration 300
 
         focus start --frequency 16 --depth 0.3 --mock
     """
+    if duration is not None and duration < 60:
+        click.echo("Error: Duration must be at least 60 seconds to allow for intro/outro phases.", err=True)
+        sys.exit(1)
+
     try:
         focus_profile = get_profile(profile)
     except KeyError as e:
@@ -199,12 +208,33 @@ async def _run_session(profile: FocusProfile, use_mock: bool, duration: int | No
     total_seconds = 0.0
     
     # Fade settings (in seconds)
-    fade_duration = 2.0
+    fade_duration = 5.0
     fade_in_samples_remaining = int(fade_duration * sample_rate)
     fade_out_buffer = []  # Buffer for fade-out when duration is set
 
+    # Phase management for timed sessions (natural musical evolution)
+    # Phases: intro -> main -> outro
+    intro_duration = 15.0  # seconds for buildup phase
+    outro_duration = 30.0  # seconds for wind-down phase
+    current_phase = "intro" if duration and profile.intro_prompt else "main"
+    phase_switched_to_main = current_phase == "main"
+    phase_switched_to_outro = False
+
+    # Build initial prompt with intro modifier if timed session
+    if duration and profile.intro_prompt and current_phase == "intro":
+        initial_prompt = f"{profile.intro_prompt}, {profile.prompt}"
+        config = LyriaConfig(
+            prompt=initial_prompt,
+            bpm=profile.bpm or 120,
+            density=max(0.1, (profile.density or 0.5) - 0.2),  # Start with lower density
+            brightness=profile.brightness or 0.5,
+        )
+        client = create_client(config, use_mock=use_mock, verbose=verbose)
+
     if verbose:
         click.echo(f"   🔊 Audio device: {sd.query_devices(sd.default.device[1])['name']}")
+        if duration:
+            click.echo(f"   🎵 Musical phases: intro ({intro_duration}s) → main → outro ({outro_duration}s)")
 
     # Connect to generator
     await client.connect()
@@ -230,7 +260,28 @@ async def _run_session(profile: FocusProfile, use_mock: bool, duration: int | No
             if verbose:
                 # Log amplitude to verify signal presence
                 max_amp = np.max(np.abs(chunk))
-                click.echo(f"   📦 Chunk {chunk_count}: {len(chunk)} samples, max_amp={max_amp:.3f}")
+                click.echo(f"   📦 Chunk {chunk_count}: {len(chunk)} samples, max_amp={max_amp:.3f}, phase={current_phase}")
+
+            # Phase transitions for timed sessions
+            if duration:
+                # Transition: intro -> main (after intro_duration)
+                if current_phase == "intro" and total_seconds >= intro_duration and not phase_switched_to_main:
+                    current_phase = "main"
+                    phase_switched_to_main = True
+                    await client.set_prompt(profile.prompt)
+                    if verbose:
+                        click.echo(f"   🎵 Phase transition: intro → main")
+
+                # Transition: main -> outro (outro_duration before end)
+                time_remaining = duration - total_seconds
+                if current_phase == "main" and time_remaining <= outro_duration and not phase_switched_to_outro:
+                    if profile.outro_prompt:
+                        current_phase = "outro"
+                        phase_switched_to_outro = True
+                        outro_full_prompt = f"{profile.outro_prompt}, {profile.prompt}"
+                        await client.set_prompt(outro_full_prompt)
+                        if verbose:
+                            click.echo(f"   🎵 Phase transition: main → outro")
 
             # Apply neural entrainment
             modulated, mod_state = apply_entrainment(

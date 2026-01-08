@@ -171,6 +171,20 @@ class LyriaClient:
                 pass
             self._session = None
 
+    async def set_prompt(self, new_prompt: str) -> None:
+        """Change the music generation prompt during playback.
+
+        Args:
+            new_prompt: The new prompt to guide music generation.
+        """
+        if self._session:
+            try:
+                await self._session.set_weighted_prompts(
+                    prompts=[types.WeightedPrompt(text=new_prompt, weight=1.0)]
+                )
+            except Exception:
+                pass  # Ignore errors, prompt change is best-effort
+
 
 class EnhancedSynthClient:
     """Enhanced synthesizer for high-quality ambient drones.
@@ -249,6 +263,10 @@ class EnhancedSynthClient:
 
     async def stop(self) -> None:
         self._running = False
+
+    async def set_prompt(self, new_prompt: str) -> None:
+        """Change prompt (no-op for synth, included for API compatibility)."""
+        pass  # Synth doesn't support dynamic prompt changes
 
 
 def create_client(config: LyriaConfig, use_mock: bool = False, verbose: bool = False) -> LyriaClient | EnhancedSynthClient:

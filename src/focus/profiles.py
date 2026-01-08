@@ -27,6 +27,10 @@ class FocusProfile:
     density: float | None = None  # 0.0-1.0
     brightness: float | None = None  # 0.0-1.0
 
+    # Prompt modifiers for timed sessions (natural musical evolution)
+    intro_prompt: str | None = None  # Added during first phase for gradual buildup
+    outro_prompt: str | None = None  # Added during last phase for natural wind-down
+
 
 # Predefined focus profiles
 PROFILES: dict[str, FocusProfile] = {
@@ -43,6 +47,8 @@ PROFILES: dict[str, FocusProfile] = {
         bpm=120,
         density=0.4,
         brightness=0.3,
+        intro_prompt="emerging from silence, slowly building, sparse beginning, gradually introducing elements",
+        outro_prompt="slowly fading, elements dropping away, peaceful resolution, gentle ending",
     ),
     "light-study": FocusProfile(
         name="light-study",
@@ -57,6 +63,8 @@ PROFILES: dict[str, FocusProfile] = {
         bpm=85,
         density=0.3,
         brightness=0.5,
+        intro_prompt="soft opening, delicate start, notes appearing gently, warmth growing",
+        outro_prompt="winding down, becoming quieter, peaceful fade, restful conclusion",
     ),
     "adhd-support": FocusProfile(
         name="adhd-support",
@@ -71,6 +79,8 @@ PROFILES: dict[str, FocusProfile] = {
         bpm=128,
         density=0.5,
         brightness=0.4,
+        intro_prompt="rhythm emerging, beat building gradually, layers joining one by one",
+        outro_prompt="beat softening, layers dissolving, energy releasing, calm ending",
     ),
     "creative-flow": FocusProfile(
         name="creative-flow",
@@ -85,6 +95,8 @@ PROFILES: dict[str, FocusProfile] = {
         bpm=90,
         density=0.25,
         brightness=0.6,
+        intro_prompt="dreamy awakening, textures slowly materializing, ethereal beginning",
+        outro_prompt="drifting away, textures dissolving, peaceful floating, serene ending",
     ),
 }
 

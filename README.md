@@ -31,6 +31,21 @@ focus profiles
 focus start --frequency 16 --depth 0.3 --prompt "ambient electronic..."
 ```
 
+## Musical Evolution (Timed Sessions)
+
+When you specify a `--duration` for your session, the music automatically evolves through three distinct phases to support your workflow:
+
+1. **Intro (15s)**: The music starts sparse and gradually builds up in density ("emerging from silence"), helping you eased into focus.
+2. **Main**: The core focus session uses the full profile settings for deep work.
+3. **Outro (30s)**: The music naturally winds down ("peaceful resolution") before the session ends.
+
+This creates a narrative arc for your work session rather than just cutting off abruptly.
+
+```bash
+# Start a 20-minute timed session with full musical evolution
+focus start --profile deep-work --duration 1200
+```
+
 ## Profiles
 
 | Profile | Frequency | Description |
@@ -38,6 +53,7 @@ focus start --frequency 16 --depth 0.3 --prompt "ambient electronic..."
 | deep-work | 18 Hz | Dark electronic, intense focus |
 | light-study | 12 Hz | Lo-fi beats, light concentration |
 | adhd-support | 15 Hz | Consistent energy with pink noise |
+| creative-flow | 10 Hz | Evolving ambient soundscapes (Alpha/Beta border) |
 
 ## Development
 
@@ -59,11 +75,11 @@ To verify the neural entrainment modulation is working correctly, you can record
 Use the `--output` / `-o` flag to save your focus session to a WAV file:
 
 ```bash
-# Record a 30-second session with the deep-work profile
-focus start --profile deep-work --duration 30 --output session.wav
+# Record a 60-second session with the deep-work profile
+focus start --profile deep-work --duration 60 --output session.wav
 
 # Short form
-focus start -p deep-work -o session.wav --duration 30
+focus start -p deep-work -o session.wav --duration 60
 ```
 
 The audio is saved alongside playback - you'll hear the music while it records.
