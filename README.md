@@ -8,6 +8,11 @@ A proof-of-concept for generating focus-enhancing music using neural entrainment
 2. **DSP post-processing** applies amplitude modulation (12-20 Hz) for neural entrainment
 3. **Focus profiles** combine genre prompts with optimized modulation settings
 
+## Prerequisites
+- Python 3.12+
+- pip package manager
+- Google Gemini API key (free from [AI Studio](https://aistudio.google.com/))
+
 ## Setup
 
 ```bash
