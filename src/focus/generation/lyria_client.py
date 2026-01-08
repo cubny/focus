@@ -6,6 +6,7 @@ enabling real-time streaming of AI-generated instrumental music.
 
 import asyncio
 import os
+import warnings
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
@@ -89,60 +90,62 @@ class LyriaClient:
                 print("   [Lyria] Connecting to live session...")
 
             # Connect to Lyria music model
-            async with self._client.aio.live.music.connect(
-                model="models/lyria-realtime-exp",
-            ) as session:
-                self._session = session
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="Realtime music generation is experimental")
+                async with self._client.aio.live.music.connect(
+                    model="models/lyria-realtime-exp",
+                ) as session:
+                    self._session = session
 
-                if self.verbose:
-                    print("   [Lyria] Session connected")
+                    if self.verbose:
+                        print("   [Lyria] Session connected")
 
-                # Configure music generation parameters
-                await session.set_music_generation_config(
-                    config=types.LiveMusicGenerationConfig(
-                        bpm=self.config.bpm,
-                        temperature=self.config.temperature,
-                        guidance=self.config.guidance,
-                        density=self.config.density,
-                        brightness=self.config.brightness,
+                    # Configure music generation parameters
+                    await session.set_music_generation_config(
+                        config=types.LiveMusicGenerationConfig(
+                            bpm=self.config.bpm,
+                            temperature=self.config.temperature,
+                            guidance=self.config.guidance,
+                            density=self.config.density,
+                            brightness=self.config.brightness,
+                        )
                     )
-                )
 
-                # Set the music style prompt
-                await session.set_weighted_prompts(
-                    prompts=[types.WeightedPrompt(text=self.config.prompt, weight=1.0)]
-                )
+                    # Set the music style prompt
+                    await session.set_weighted_prompts(
+                        prompts=[types.WeightedPrompt(text=self.config.prompt, weight=1.0)]
+                    )
 
-                # Start playback
-                await session.play()
-                if self.verbose:
-                    print("   [Lyria] Playback started, receiving audio...")
+                    # Start playback
+                    await session.play()
+                    if self.verbose:
+                        print("   [Lyria] Playback started, receiving audio...")
 
-                # Receive audio chunks
-                async for message in session.receive():
-                    if not self._running:
-                        break
+                    # Receive audio chunks
+                    async for message in session.receive():
+                        if not self._running:
+                            break
 
-                    # Check for audio data in the message
-                    # The Lyria API returns audio in server_content.audio_chunks
-                    if (
-                        hasattr(message, 'server_content') 
-                        and message.server_content 
-                        and hasattr(message.server_content, 'audio_chunks')
-                        and message.server_content.audio_chunks
-                    ):
-                        # Get raw audio data from the chunk
-                        audio_data = message.server_content.audio_chunks[0].data
-                        
-                        # Raw 16-bit PCM audio
-                        audio_int16 = np.frombuffer(audio_data, dtype=np.int16)
-                        audio_float = audio_int16.astype(np.float32) / 32768.0
+                        # Check for audio data in the message
+                        # The Lyria API returns audio in server_content.audio_chunks
+                        if (
+                            hasattr(message, 'server_content') 
+                            and message.server_content 
+                            and hasattr(message.server_content, 'audio_chunks')
+                            and message.server_content.audio_chunks
+                        ):
+                            # Get raw audio data from the chunk
+                            audio_data = message.server_content.audio_chunks[0].data
+                            
+                            # Raw 16-bit PCM audio
+                            audio_int16 = np.frombuffer(audio_data, dtype=np.int16)
+                            audio_float = audio_int16.astype(np.float32) / 32768.0
 
-                        # Reshape to stereo (interleaved L/R samples)
-                        if self.config.channels == 2 and len(audio_float) >= 2:
-                            audio_float = audio_float.reshape(-1, 2)
+                            # Reshape to stereo (interleaved L/R samples)
+                            if self.config.channels == 2 and len(audio_float) >= 2:
+                                audio_float = audio_float.reshape(-1, 2)
 
-                        yield audio_float
+                            yield audio_float
 
         except Exception as e:
             error_msg = str(e)
