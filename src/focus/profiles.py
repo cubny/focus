@@ -1,0 +1,116 @@
+"""Focus profiles for different concentration modes.
+
+Each profile combines:
+- A Lyria prompt optimized for focus music generation
+- Modulation parameters for neural entrainment
+"""
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class FocusProfile:
+    """Configuration for a focus session."""
+
+    name: str
+    description: str
+
+    # Lyria prompt for music generation
+    prompt: str
+
+    # Neural entrainment parameters
+    modulation_freq: float  # Hz (12-20 for Beta waves)
+    modulation_depth: float  # 0.0-1.0
+
+    # Optional Lyria parameters
+    bpm: int | None = None
+    density: float | None = None  # 0.0-1.0
+    brightness: float | None = None  # 0.0-1.0
+
+
+# Predefined focus profiles
+PROFILES: dict[str, FocusProfile] = {
+    "deep-work": FocusProfile(
+        name="deep-work",
+        description="Intense focus for complex tasks requiring deep concentration",
+        prompt=(
+            "Dark electronic ambient, steady pulse, minimal percussion, "
+            "deep bass, broad synthesis, no vocals, consistent energy, "
+            "subtle evolving textures, hypnotic rhythm"
+        ),
+        modulation_freq=18.0,  # High Beta for intense focus
+        modulation_depth=0.35,
+        bpm=120,
+        density=0.4,
+        brightness=0.3,
+    ),
+    "light-study": FocusProfile(
+        name="light-study",
+        description="Gentle focus for reading, studying, or light work",
+        prompt=(
+            "Lo-fi beats, warm piano chords, gentle rhythm, "
+            "ambient texture, soft vinyl crackle, no vocals, "
+            "cozy atmosphere, slow tempo"
+        ),
+        modulation_freq=12.0,  # Low Beta for relaxed attention
+        modulation_depth=0.25,
+        bpm=85,
+        density=0.3,
+        brightness=0.5,
+    ),
+    "adhd-support": FocusProfile(
+        name="adhd-support",
+        description="Structured rhythm to help maintain attention with ADHD",
+        prompt=(
+            "Ambient techno, consistent driving beat, steady energy, "
+            "broad synthesis, layered textures, no vocals, "
+            "predictable progression, subtle pink noise undertone"
+        ),
+        modulation_freq=15.0,  # Mid Beta
+        modulation_depth=0.40,  # Slightly stronger modulation
+        bpm=128,
+        density=0.5,
+        brightness=0.4,
+    ),
+    "creative-flow": FocusProfile(
+        name="creative-flow",
+        description="Open-ended focus for creative and exploratory work",
+        prompt=(
+            "Atmospheric ambient, evolving soundscapes, ethereal pads, "
+            "gentle movement, space and reverb, no vocals, "
+            "dreamy textures, organic sounds"
+        ),
+        modulation_freq=10.0,  # Alpha-Beta border for creative state
+        modulation_depth=0.20,
+        bpm=90,
+        density=0.25,
+        brightness=0.6,
+    ),
+}
+
+
+def get_profile(name: str) -> FocusProfile:
+    """Get a focus profile by name.
+
+    Args:
+        name: Profile name (e.g., 'deep-work', 'light-study').
+
+    Returns:
+        The corresponding FocusProfile.
+
+    Raises:
+        KeyError: If the profile name is not found.
+    """
+    if name not in PROFILES:
+        available = ", ".join(PROFILES.keys())
+        raise KeyError(f"Unknown profile '{name}'. Available profiles: {available}")
+    return PROFILES[name]
+
+
+def list_profiles() -> list[FocusProfile]:
+    """Get all available focus profiles.
+
+    Returns:
+        List of all FocusProfile objects.
+    """
+    return list(PROFILES.values())
