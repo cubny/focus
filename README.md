@@ -35,18 +35,42 @@ export GOOGLE_API_KEY="your-api-key-from-aistudio"
 ## Usage
 
 ```bash
-# Start a focus session
+# Start a focus session with default profile
 focus start --profile deep-work
 
 # List available profiles
 focus profiles
 
-# Custom settings
+# Custom modulation settings
 focus start --frequency 16 --depth 0.3 --prompt "ambient electronic..."
 
-# Audio adjustments
-focus start --reverb --stereo-width 1.5      # Enhanced space
-focus start --no-reverb --no-limiter         # Raw output
+# Timed session (must be at least 60 seconds)
+focus start --profile deep-work --duration 1200  # 20 minutes
+
+# Record to file (plays audio while recording)
+focus start --profile deep-work --duration 300 -o session.wav
+```
+
+### Audio Enhancement Options
+
+```bash
+# Adjust stereo width (1.0 = normal, >1.0 = wider)
+focus start --stereo-width 1.5
+
+# Disable reverb for a drier sound
+focus start --no-reverb
+
+# Disable the safety limiter (for raw, unprocessed dynamics)
+focus start --no-limiter
+
+# Minimal processing (dry, no limiting)
+focus start --no-reverb --no-limiter
+
+# Maximum enhancement
+focus start --reverb --stereo-width 2.0 --limiter
+
+# Debug mode with verbose output
+focus start -v
 ```
 
 ## Musical Evolution (Timed Sessions)
@@ -84,27 +108,9 @@ ruff format src/ tests/
 ruff check --fix src/ tests/
 ```
 
-## Recording & Verification
+## Verification
 
-To verify the neural entrainment modulation is working correctly, you can record the audio output using the `--output` flag and analyze it with the built-in `analyze` command.
-
-### Recording Audio
-
-Use the `--output` / `-o` flag to save your focus session to a WAV file:
-
-```bash
-# Record a 60-second session with the deep-work profile
-focus start --profile deep-work --duration 60 --output session.wav
-
-# Short form
-focus start -p deep-work -o session.wav --duration 60
-```
-
-The audio is saved alongside playback - you'll hear the music while it records.
-
-### Analyzing Output
-
-Use `focus analyze` to verify the modulation in your recorded file:
+Use `focus analyze` to verify the neural entrainment modulation in a recorded session:
 
 ```bash
 # Analyze with default expected frequency (15 Hz)
