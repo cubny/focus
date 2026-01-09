@@ -6,7 +6,16 @@ A proof-of-concept for generating focus-enhancing music using neural entrainment
 
 1. **Google Lyria RealTime** generates continuous, non-looping instrumental music
 2. **DSP post-processing** applies amplitude modulation (12-20 Hz) for neural entrainment
-3. **Focus profiles** combine genre prompts with optimized modulation settings
+3. **Spatialization** adds subtle reverb and stereo widening for a "premium" feel
+4. **Focus profiles** combine genre prompts with optimized modulation settings
+
+## Audio Enhancements
+
+The system now includes professional audio processing to prevent listening fatigue:
+- **Spatial Ambience**: Schroeder reverb algorithm creates a comfortable acoustic space.
+- **Stereo Widening**: M/S processing for a wider, more immersive soundstage.
+- **Safety Limiter**: True Peak limiting prevents digital clipping and ensures consistent volume.
+- **Glitch-Free**: Overlap-add processing eliminates clicks at chunk boundaries.
 
 ## Prerequisites
 - Python 3.12+
@@ -34,6 +43,10 @@ focus profiles
 
 # Custom settings
 focus start --frequency 16 --depth 0.3 --prompt "ambient electronic..."
+
+# Audio adjustments
+focus start --reverb --stereo-width 1.5      # Enhanced space
+focus start --no-reverb --no-limiter         # Raw output
 ```
 
 ## Musical Evolution (Timed Sessions)

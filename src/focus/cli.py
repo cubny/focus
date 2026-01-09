@@ -7,7 +7,22 @@ import os
 
 from focus.profiles import get_profile, list_profiles, FocusProfile
 from focus.generation.lyria_client import LyriaConfig, create_client
-from focus.dsp.entrainment import ModulationState, apply_entrainment, apply_fade_in, apply_fade_out
+from focus.dsp.entrainment import (
+    ModulationState, 
+    apply_entrainment, 
+    apply_fade_in, 
+    apply_fade_out
+)
+from focus.dsp.spatial import (
+    ReverbState,
+    apply_reverb,
+    apply_stereo_widening
+)
+from focus.dsp.dynamics import (
+    LimiterState,
+    apply_limiter
+)
+from focus.audio.pipeline import OverlapAddState
 
 # Check for optional dependencies
 try:
@@ -101,6 +116,24 @@ def show_profiles():
     help="Save audio to WAV file (in addition to playback)",
 )
 @click.option(
+    "--reverb/--no-reverb",
+    is_flag=True,
+    default=True,
+    help="Enable/disable spatial reverb (default: enabled)",
+)
+@click.option(
+    "--stereo-width",
+    type=float,
+    default=1.2,
+    help="Stereo width enhancement (1.0=original, >1.0=wider)",
+)
+@click.option(
+    "--limiter/--no-limiter",
+    is_flag=True,
+    default=True,
+    help="Enable/disable safety limiter (default: enabled)",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
@@ -115,6 +148,9 @@ def start_session(
     mock: bool,
     duration: int | None,
     output: str | None,
+    reverb: bool,
+    stereo_width: float,
+    limiter: bool,
     verbose: bool,
 ):
     """Start a focus music session.
@@ -152,6 +188,7 @@ def start_session(
 
     click.echo(f"\n🎯 Starting focus session: {click.style(focus_profile.name, bold=True)}")
     click.echo(f"   Modulation: {focus_profile.modulation_freq:.0f} Hz @ {focus_profile.modulation_depth:.0%}")
+    click.echo(f"   Effects: Reverb={'ON' if reverb else 'OFF'}, Width={stereo_width}, Limiter={'ON' if limiter else 'OFF'}")
     if verbose:
         click.echo(f"   BPM: {focus_profile.bpm}, Density: {focus_profile.density}, Brightness: {focus_profile.brightness}")
         click.echo(f"   Prompt: {focus_profile.prompt[:60]}...")
@@ -162,7 +199,16 @@ def start_session(
     click.echo("\n   Press Ctrl+C to stop\n")
 
     try:
-        asyncio.run(_run_session(focus_profile, mock, duration, output, verbose))
+        asyncio.run(_run_session(
+            focus_profile, 
+            mock, 
+            duration, 
+            output, 
+            reverb=reverb,
+            stereo_width=stereo_width,
+            limiter=limiter,
+            verbose=verbose
+        ))
     except KeyboardInterrupt:
         click.echo("\n\n🛑 Session stopped by user")
     
@@ -171,7 +217,16 @@ def start_session(
     click.echo("👋 Session ended. Stay focused!\n")
 
 
-async def _run_session(profile: FocusProfile, use_mock: bool, duration: int | None, output_path: str | None = None, verbose: bool = False):
+async def _run_session(
+    profile: FocusProfile, 
+    use_mock: bool, 
+    duration: int | None, 
+    output_path: str | None = None,
+    reverb: bool = True,
+    stereo_width: float = 1.2,
+    limiter: bool = True,
+    verbose: bool = False
+):
     """Run the audio generation session."""
     try:
         from focus.audio.output import AudioOutput, FileAudioOutput
@@ -203,6 +258,10 @@ async def _run_session(profile: FocusProfile, use_mock: bool, duration: int | No
 
     # Initialize state
     mod_state = ModulationState()
+    reverb_state = ReverbState() if reverb else None
+    limiter_state = LimiterState(ceiling_linear=0.989) if limiter else None  # -0.1 dBTP
+    overlap_state = OverlapAddState()
+    
     sample_rate = 48000
     chunk_count = 0
     total_seconds = 0.0
@@ -316,6 +375,31 @@ async def _run_session(profile: FocusProfile, use_mock: bool, duration: int | No
                         modulated[:fade_in_samples_remaining] *= envelope
                     modulated = modulated.astype(np.float32)
                 fade_in_samples_remaining -= chunk_samples
+
+            # --- Phase 3 DSP Chain ---
+            
+            # 1. Spatialization (Reverb)
+            if reverb:
+                modulated, reverb_state = apply_reverb(
+                    modulated,
+                    sample_rate,
+                    state=reverb_state
+                )
+
+            # 2. Stereo Widening
+            if abs(stereo_width - 1.0) > 0.01:
+                modulated = apply_stereo_widening(modulated, width=stereo_width)
+            
+            # 3. Glitch Removal (Overlap-Add)
+            modulated = overlap_state.process(modulated)
+            
+            # 4. Dynamics (Limiter)
+            if limiter:
+                modulated, limiter_state = apply_limiter(
+                    modulated,
+                    sample_rate,
+                    state=limiter_state
+                )
 
             # Buffer for fade-out when duration is set
             if duration:
