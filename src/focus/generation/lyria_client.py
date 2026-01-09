@@ -202,6 +202,10 @@ class EnhancedSynthClient:
         self._running = False
         self._phase = 0.0
         
+        # Stereo delay buffer for click-free stereo widening
+        delay_samples = int(0.02 * config.sample_rate)  # 20ms delay
+        self._delay_buffer = np.zeros(delay_samples, dtype=np.float32)
+        
         # Oscillator banks for rich texture
         # Base frequencies tailored to the profile's BPM/Mood
         base_freq = 110.0  # A2
@@ -217,6 +221,9 @@ class EnhancedSynthClient:
     async def connect(self, api_key: str | None = None) -> None:
         """Initialize synth."""
         self._running = True
+        # Reset delay buffer on connect
+        delay_samples = int(0.02 * self.config.sample_rate)
+        self._delay_buffer = np.zeros(delay_samples, dtype=np.float32)
         if self.verbose:
             print("   [Synth] Lyria unavailable, using enhanced ambient synthesizer")
 
@@ -241,15 +248,17 @@ class EnhancedSynthClient:
                 # Add sine wave
                 mix += amp * np.sin(2 * np.pi * freq * current_t)
 
-            # Simple stereo widening
+            # Stereo widening with proper cross-chunk delay (no clicks)
             # Left channel: original mix
-            # Right channel: slightly delayed mix to create width
-            delay_samples = int(0.02 * sample_rate)  # 20ms delay
-            
-            # Since we generate chunks, we'll simulate stereo by just inverting phase of high freqs
-            # or simple panning. Let's do simple detuning for stereo.
+            # Right channel: delayed mix using stateful buffer
             left = mix
-            right = np.roll(mix, delay_samples) # Simple circular delay for this chunk
+            
+            delay_len = len(self._delay_buffer)
+            # Concatenate delay buffer with current mix, then split
+            delayed_signal = np.concatenate([self._delay_buffer, mix])
+            right = delayed_signal[:chunk_samples]
+            # Store tail for next chunk
+            self._delay_buffer = delayed_signal[-delay_len:].copy()
 
             # Soft clip limiter
             stereo = np.column_stack([left, right])

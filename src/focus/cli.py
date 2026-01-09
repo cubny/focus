@@ -22,7 +22,6 @@ from focus.dsp.dynamics import (
     LimiterState,
     apply_limiter
 )
-from focus.audio.pipeline import OverlapAddState
 
 # Check for optional dependencies
 try:
@@ -260,7 +259,6 @@ async def _run_session(
     mod_state = ModulationState()
     reverb_state = ReverbState() if reverb else None
     limiter_state = LimiterState(ceiling_linear=0.989) if limiter else None  # -0.1 dBTP
-    overlap_state = OverlapAddState()
     
     sample_rate = 48000
     chunk_count = 0
@@ -389,10 +387,7 @@ async def _run_session(
             # 2. Stereo Widening
             if abs(stereo_width - 1.0) > 0.01:
                 modulated = apply_stereo_widening(modulated, width=stereo_width)
-            
-            # 3. Glitch Removal (Overlap-Add)
-            modulated = overlap_state.process(modulated)
-            
+
             # 4. Dynamics (Limiter)
             if limiter:
                 modulated, limiter_state = apply_limiter(
@@ -452,12 +447,14 @@ async def _run_session(
             output.write(faded)
             if file_output:
                 file_output.write(faded)
+        output.flush()  # Flush leftover samples with fade-out
         output.stop()
         if file_output:
             file_output.stop()
         await client.stop()
         if verbose:
-            click.echo(f"   ✓ Session ended after {total_seconds:.1f}s ({chunk_count} chunks)")
+            underrun_msg = f", {output.underrun_count} underruns" if output.underrun_count > 0 else ""
+            click.echo(f"   ✓ Session ended after {total_seconds:.1f}s ({chunk_count} chunks{underrun_msg})")
 
 
 @main.command("test-audio")

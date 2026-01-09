@@ -18,24 +18,31 @@ except ImportError:
 class AudioOutput:
     """Real-time audio output using sounddevice.
 
-    Uses a queue-based approach for thread-safe audio buffering.
+    Uses a continuous sample buffer to avoid zero-padding clicks.
+    Leftover samples are held until enough data arrives for a complete block.
     """
 
     sample_rate: int = 48000
     channels: int = 2
     blocksize: int = 2048
-    buffersize: int = 50  # Increased buffer: ~2 seconds
+    buffersize: int = 50  # Queue capacity in blocks
+    prefill_blocks: int = 10  # Pre-fill this many blocks before starting actual playback
 
     _stream: object = field(default=None, init=False, repr=False)
     _queue: queue.Queue = field(default_factory=lambda: queue.Queue(maxsize=50), init=False, repr=False)
     _running: bool = field(default=False, init=False)
+    _started: bool = field(default=False, init=False)
+    _leftover: np.ndarray | None = field(default=None, init=False, repr=False)
+    _underrun_count: int = field(default=0, init=False)
+    _last_block: np.ndarray | None = field(default=None, init=False, repr=False)
+    _fade_position: int = field(default=0, init=False)
+    _blocks_written: int = field(default=0, init=False)
 
     def __post_init__(self):
         if not SOUNDDEVICE_AVAILABLE:
             raise ImportError(
                 "sounddevice package is required. Install with: pip install sounddevice"
             )
-        # Re-initialize queue with maxsize for blocking put behavior
         self._queue = queue.Queue(maxsize=self.buffersize)
 
     def start(self) -> None:
@@ -48,27 +55,37 @@ class AudioOutput:
             callback=self._audio_callback,
         )
         self._stream.start()
+        self._started = True
 
     def _audio_callback(
         self, outdata: np.ndarray, frames: int, time_info, status
     ) -> None:
         """Callback for sounddevice to get audio data."""
-        if status:
-            pass  # Could log underruns here
+        if status and status.output_underflow:
+            self._underrun_count += 1
 
         try:
             data = self._queue.get_nowait()
-            # Ensure data fits the output buffer
-            if len(data) >= frames:
-                outdata[:] = data[:frames]
-            else:
-                outdata[: len(data)] = data
-                outdata[len(data) :] = 0
+            outdata[:] = data
+            self._last_block = data.copy()
+            self._fade_position = 0
+            
         except queue.Empty:
-            outdata[:] = 0  # Output silence if buffer is empty
+            self._underrun_count += 1
+            
+            # Graceful underrun: fade to silence using last block
+            if self._last_block is not None and self._fade_position < 4:
+                fade_factor = max(0.0, 1.0 - (self._fade_position + 1) * 0.25)
+                outdata[:] = self._last_block * fade_factor
+                self._fade_position += 1
+            else:
+                outdata[:] = 0
 
     def write(self, audio: np.ndarray) -> None:
         """Write audio data to the output buffer.
+
+        Uses a leftover buffer to avoid zero-padding. Only complete blocks
+        are queued; incomplete data is held for the next write() call.
 
         Args:
             audio: Audio data, shape (samples, channels).
@@ -76,17 +93,58 @@ class AudioOutput:
         if not self._running:
             return
 
-        # Split into blocks and queue
-        for i in range(0, len(audio), self.blocksize):
-            block = audio[i : i + self.blocksize]
-            if block.shape[0] < self.blocksize:
-                # Pad the last block
-                padded = np.zeros((self.blocksize, self.channels), dtype=audio.dtype)
-                padded[: block.shape[0]] = block
-                block = padded
+        # Prepend any leftover samples from previous write
+        if self._leftover is not None and len(self._leftover) > 0:
+            audio = np.concatenate([self._leftover, audio], axis=0)
+            self._leftover = None
 
-            # Put in queue, blocking if full (backpressure)
-            self._queue.put(block)
+        # Queue complete blocks only
+        n_complete_blocks = len(audio) // self.blocksize
+        for i in range(n_complete_blocks):
+            block = audio[i * self.blocksize : (i + 1) * self.blocksize]
+            
+            # Ensure correct shape and dtype
+            if block.ndim == 1:
+                block = np.column_stack([block, block])
+            block = block.astype(np.float32)
+            
+            self._blocks_written += 1
+            
+            # Use put with timeout to avoid deadlock but maintain backpressure
+            try:
+                self._queue.put(block, timeout=0.1)
+            except queue.Full:
+                # If queue is full, skip this block (better than blocking forever)
+                pass
+
+        # Store leftover samples for next write
+        leftover_start = n_complete_blocks * self.blocksize
+        if leftover_start < len(audio):
+            self._leftover = audio[leftover_start:].copy()
+
+    def flush(self) -> None:
+        """Flush any leftover samples with fade-out.
+        
+        Call this before stop() to gracefully end playback without clicks.
+        """
+        if self._leftover is not None and len(self._leftover) > 0:
+            # Pad to full block with fade-out
+            padded = np.zeros((self.blocksize, self.channels), dtype=np.float32)
+            samples_to_copy = min(len(self._leftover), self.blocksize)
+            padded[:samples_to_copy] = self._leftover[:samples_to_copy]
+            
+            # Apply fade-out to the padded portion
+            fade_len = self.blocksize - samples_to_copy
+            if fade_len > 0 and samples_to_copy > 0:
+                fade = np.linspace(1.0, 0.0, min(256, samples_to_copy))
+                if len(fade) <= samples_to_copy:
+                    padded[samples_to_copy-len(fade):samples_to_copy] *= fade[:, np.newaxis]
+            
+            try:
+                self._queue.put(padded, timeout=0.1)
+            except queue.Full:
+                pass
+            self._leftover = None
 
     def stop(self) -> None:
         """Stop the audio output stream."""
@@ -95,6 +153,15 @@ class AudioOutput:
             self._stream.stop()
             self._stream.close()
             self._stream = None
+        self._started = False
+        self._leftover = None
+        self._last_block = None
+        self._fade_position = 0
+    
+    @property
+    def underrun_count(self) -> int:
+        """Number of buffer underruns detected during playback."""
+        return self._underrun_count
 
     def __enter__(self):
         self.start()

@@ -1,7 +1,7 @@
 """Real-time audio processing pipeline.
 
 Connects the Lyria generator to the DSP entrainment layer and audio output.
-Includes spatial effects, dynamics processing, and glitch-free chunk handling.
+Includes spatial effects and dynamics processing.
 """
 
 import asyncio
@@ -25,60 +25,6 @@ class AudioGenerator(Protocol):
     async def stop(self) -> None: ...
 
 
-@dataclass
-class OverlapAddState:
-    """State for overlap-add processing to eliminate chunk boundary glitches."""
-    
-    overlap_samples: int = 256
-    _prev_tail: np.ndarray | None = field(default=None, init=False, repr=False)
-    
-    def process(self, audio: np.ndarray) -> np.ndarray:
-        """
-        Apply overlap-add crossfade at chunk boundaries.
-        
-        Args:
-            audio: Input audio chunk, shape (samples,) or (samples, channels).
-        
-        Returns:
-            Processed audio with smooth transitions.
-        """
-        if self._prev_tail is None:
-            # First chunk - just store tail and return
-            self._prev_tail = audio[-self.overlap_samples:].copy()
-            return audio
-        
-        n_overlap = min(self.overlap_samples, len(audio), len(self._prev_tail))
-        
-        if n_overlap == 0:
-            self._prev_tail = audio[-self.overlap_samples:].copy()
-            return audio
-        
-        # Create raised-cosine crossfade envelope
-        t = np.linspace(0, np.pi / 2, n_overlap)
-        fade_in = np.sin(t) ** 2
-        fade_out = np.cos(t) ** 2
-        
-        # Reshape for stereo
-        if audio.ndim == 2:
-            fade_in = fade_in[:, np.newaxis]
-            fade_out = fade_out[:, np.newaxis]
-        
-        # Apply crossfade to beginning of current chunk
-        output = audio.copy()
-        output[:n_overlap] = (
-            self._prev_tail[-n_overlap:] * fade_out + 
-            audio[:n_overlap] * fade_in
-        )
-        
-        # Store tail for next chunk
-        self._prev_tail = audio[-self.overlap_samples:].copy()
-        
-        return output
-    
-    def reset(self):
-        """Clear the overlap buffer."""
-        self._prev_tail = None
-
 
 @dataclass
 class AudioPipeline:
@@ -90,8 +36,7 @@ class AudioPipeline:
     DSP chain order:
     1. Neural entrainment (amplitude modulation)
     2. Spatialization (reverb + stereo widening)
-    3. Overlap-add crossfade (glitch removal)
-    4. Dynamics limiting (True Peak safety)
+    3. Dynamics limiting (True Peak safety)
     """
 
     generator: AudioGenerator
@@ -109,7 +54,6 @@ class AudioPipeline:
     _mod_state: ModulationState = field(default_factory=ModulationState, init=False)
     _reverb_state: ReverbState | None = field(default=None, init=False)
     _limiter_state: LimiterState | None = field(default=None, init=False)
-    _overlap_state: OverlapAddState = field(default_factory=OverlapAddState, init=False)
     _task: asyncio.Task | None = field(default=None, init=False)
 
     async def start(self, api_key: str | None = None) -> None:
@@ -152,11 +96,8 @@ class AudioPipeline:
             
             if self.enable_stereo_widening and processed.ndim == 2:
                 processed = apply_stereo_widening(processed, width=self.stereo_width)
-            
-            # 3. Apply overlap-add for glitch-free transitions
-            processed = self._overlap_state.process(processed)
-            
-            # 4. Apply dynamics limiting (last in chain)
+
+            # 3. Apply dynamics limiting (last in chain)
             if self.enable_limiter:
                 processed, self._limiter_state = apply_limiter(
                     processed,
