@@ -98,6 +98,38 @@ PROFILES: dict[str, FocusProfile] = {
         intro_prompt="dreamy awakening, textures slowly materializing, ethereal beginning",
         outro_prompt="drifting away, textures dissolving, peaceful floating, serene ending",
     ),
+    "energetic": FocusProfile(
+        name="energetic",
+        description="High-energy focus for tasks requiring momentum and drive",
+        prompt=(
+            "Driving electronic, punchy drums, energetic bassline, "
+            "bright synth leads, powerful rhythms, no vocals, "
+            "dynamic tension, forward momentum, bold synthesis"
+        ),
+        modulation_freq=20.0,  # High Beta for maximum alertness
+        modulation_depth=0.40,
+        bpm=140,
+        density=0.6,
+        brightness=0.7,
+        intro_prompt="energy igniting, rhythm sparking to life, power building from the ground up",
+        outro_prompt="energy channeling down, rhythm easing back, power settling into calm strength",
+    ),
+    "uplifting": FocusProfile(
+        name="uplifting",
+        description="Positive, bright focus for maintaining optimism and motivation",
+        prompt=(
+            "Uplifting melodic ambient, warm major chords, bright arpeggios, "
+            "hopeful progressions, shimmering pads, no vocals, "
+            "positive energy, gentle euphoria, inspiring textures"
+        ),
+        modulation_freq=14.0,  # Mid Beta for balanced, positive focus
+        modulation_depth=0.30,
+        bpm=110,
+        density=0.45,
+        brightness=0.8,
+        intro_prompt="light dawning, warmth spreading gently, hope awakening softly",
+        outro_prompt="light softening into golden glow, warmth lingering, peaceful gratitude",
+    ),
 }
 
 

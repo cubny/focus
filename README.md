@@ -96,6 +96,8 @@ focus start --profile deep-work --duration 1200
 | light-study | 12 Hz | Lo-fi beats, light concentration |
 | adhd-support | 15 Hz | Consistent energy with pink noise |
 | creative-flow | 10 Hz | Evolving ambient soundscapes (Alpha/Beta border) |
+| energetic | 20 Hz | Driving electronic, high-energy momentum |
+| uplifting | 14 Hz | Warm melodic ambient, positive motivation |
 
 ## Development
 
