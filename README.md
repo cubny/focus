@@ -11,11 +11,11 @@ A proof-of-concept for generating focus-enhancing music using neural entrainment
 
 ## Audio Enhancements
 
-The system now includes professional audio processing to prevent listening fatigue:
-- **Spatial Ambience**: Schroeder reverb algorithm creates a comfortable acoustic space.
-- **Stereo Widening**: M/S processing for a wider, more immersive soundstage.
-- **Safety Limiter**: True Peak limiting prevents digital clipping and ensures consistent volume.
-- **Glitch-Free**: Overlap-add processing eliminates clicks at chunk boundaries.
+The system includes professional audio processing to enhance the listening experience:
+
+- **Spatial Ambience**: Schroeder reverb algorithm creates a comfortable acoustic space
+- **Stereo Widening**: M/S processing for a wider, more immersive soundstage
+- **Safety Limiter**: True Peak limiting prevents digital clipping and ensures consistent volume
 
 ## Prerequisites
 - Python 3.12+
