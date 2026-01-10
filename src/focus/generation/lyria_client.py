@@ -78,90 +78,145 @@ class LyriaClient:
         Yields:
             Audio chunks as numpy arrays, shape (samples, 2) for stereo,
             dtype float32, normalized to [-1, 1].
+
+        Note:
+            Implements retry logic with exponential backoff for transient
+            WebSocket errors (e.g., 1011 "service unavailable"). After
+            exhausting retries, falls back to EnhancedSynthClient.
         """
         if not self._client:
             raise RuntimeError("Client not connected. Call connect() first.")
 
-        try:
-            if self.verbose:
-                print("   [Lyria] Connecting to live session...")
+        max_retries = 3
+        retry_count = 0
+        base_delay = 1.0  # seconds
 
-            # Connect to Lyria music model
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore", message="Realtime music generation is experimental"
-                )
-                async with self._client.aio.live.music.connect(
-                    model="models/lyria-realtime-exp",
-                ) as session:
-                    self._session = session
-
-                    if self.verbose:
-                        print("   [Lyria] Session connected")
-
-                    # Configure music generation parameters
-                    await session.set_music_generation_config(
-                        config=types.LiveMusicGenerationConfig(
-                            bpm=self.config.bpm,
-                            temperature=self.config.temperature,
-                            guidance=self.config.guidance,
-                            density=self.config.density,
-                            brightness=self.config.brightness,
-                        )
-                    )
-
-                    # Set the music style prompt
-                    await session.set_weighted_prompts(
-                        prompts=[types.WeightedPrompt(text=self.config.prompt, weight=1.0)]
-                    )
-
-                    # Start playback
-                    await session.play()
-                    if self.verbose:
-                        print("   [Lyria] Playback started, receiving audio...")
-
-                    # Receive audio chunks
-                    async for message in session.receive():
-                        if not self._running:
-                            break
-
-                        # Check for audio data in the message
-                        # The Lyria API returns audio in server_content.audio_chunks
-                        if (
-                            hasattr(message, "server_content")
-                            and message.server_content
-                            and hasattr(message.server_content, "audio_chunks")
-                            and message.server_content.audio_chunks
-                        ):
-                            # Get raw audio data from the chunk
-                            audio_data = message.server_content.audio_chunks[0].data
-
-                            # Raw 16-bit PCM audio
-                            audio_int16 = np.frombuffer(audio_data, dtype=np.int16)
-                            audio_float = audio_int16.astype(np.float32) / 32768.0
-
-                            # Reshape to stereo (interleaved L/R samples)
-                            if self.config.channels == 2 and len(audio_float) >= 2:
-                                audio_float = audio_float.reshape(-1, 2)
-
-                            yield audio_float
-
-        except Exception as e:
-            error_msg = str(e)
-            if "404" in error_msg or "not found" in error_msg.lower():
+        while retry_count <= max_retries and self._running:
+            try:
                 if self.verbose:
-                    print(f"   ⚠️  Lyria model unreachable ({error_msg})")
-                    print("   🔄 Falling back to Enhanced Synth engine...")
+                    if retry_count > 0:
+                        print(f"   [Lyria] Retry attempt {retry_count}/{max_retries}...")
+                    else:
+                        print("   [Lyria] Connecting to live session...")
 
-                # seamless fallback
-                synth = EnhancedSynthClient(self.config, verbose=self.verbose)
-                await synth.connect()
-                async for chunk in synth.generate_stream():
-                    if not self._running:
-                        break
-                    yield chunk
-            else:
-                raise e
+                # Connect to Lyria music model
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore", message="Realtime music generation is experimental"
+                    )
+                    async with self._client.aio.live.music.connect(
+                        model="models/lyria-realtime-exp",
+                    ) as session:
+                        self._session = session
+                        # Reset retry count on successful connection
+                        retry_count = 0
+
+                        if self.verbose:
+                            print("   [Lyria] Session connected")
+
+                        # Configure music generation parameters
+                        await session.set_music_generation_config(
+                            config=types.LiveMusicGenerationConfig(
+                                bpm=self.config.bpm,
+                                temperature=self.config.temperature,
+                                guidance=self.config.guidance,
+                                density=self.config.density,
+                                brightness=self.config.brightness,
+                            )
+                        )
+
+                        # Set the music style prompt
+                        await session.set_weighted_prompts(
+                            prompts=[types.WeightedPrompt(text=self.config.prompt, weight=1.0)]
+                        )
+
+                        # Start playback
+                        await session.play()
+                        if self.verbose:
+                            print("   [Lyria] Playback started, receiving audio...")
+
+                        # Receive audio chunks
+                        async for message in session.receive():
+                            if not self._running:
+                                return  # Clean exit
+
+                            # Check for audio data in the message
+                            # The Lyria API returns audio in server_content.audio_chunks
+                            if (
+                                hasattr(message, "server_content")
+                                and message.server_content
+                                and hasattr(message.server_content, "audio_chunks")
+                                and message.server_content.audio_chunks
+                            ):
+                                # Get raw audio data from the chunk
+                                audio_data = message.server_content.audio_chunks[0].data
+
+                                # Raw 16-bit PCM audio
+                                audio_int16 = np.frombuffer(audio_data, dtype=np.int16)
+                                audio_float = audio_int16.astype(np.float32) / 32768.0
+
+                                # Reshape to stereo (interleaved L/R samples)
+                                if self.config.channels == 2 and len(audio_float) >= 2:
+                                    audio_float = audio_float.reshape(-1, 2)
+
+                                yield audio_float
+
+                        # Normal completion (session.receive() ended cleanly)
+                        return
+
+            except Exception as e:
+                error_msg = str(e)
+
+                # Check for non-retryable errors (model not found)
+                if "404" in error_msg or "not found" in error_msg.lower():
+                    if self.verbose:
+                        print(f"   ⚠️  Lyria model unreachable ({error_msg})")
+                        print("   🔄 Falling back to Enhanced Synth engine...")
+                    break  # Go straight to fallback
+
+                # Check for retryable errors (WebSocket issues, service unavailable)
+                is_retryable = any(
+                    indicator in error_msg.lower()
+                    for indicator in [
+                        "1011",  # WebSocket internal error
+                        "service",  # "service unavailable"
+                        "connection",  # Connection errors
+                        "websocket",  # WebSocket errors
+                        "timeout",  # Timeouts
+                        "closed",  # Connection closed
+                    ]
+                )
+
+                if is_retryable and retry_count < max_retries:
+                    retry_count += 1
+                    delay = base_delay * (2 ** (retry_count - 1))  # Exponential backoff
+                    if self.verbose:
+                        print(
+                            f"   ⚠️  Lyria connection error: {error_msg[:80]}..."
+                            if len(error_msg) > 80
+                            else f"   ⚠️  Lyria connection error: {error_msg}"
+                        )
+                        print(f"   🔄 Retrying in {delay:.1f}s ({retry_count}/{max_retries})...")
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    # Non-retryable or retries exhausted
+                    if self.verbose:
+                        if retry_count >= max_retries:
+                            print(f"   ❌ Lyria retries exhausted after {max_retries} attempts")
+                        else:
+                            print(f"   ❌ Lyria error (non-retryable): {error_msg}")
+                        print("   🔄 Falling back to Enhanced Synth engine...")
+                    break  # Go to fallback
+
+        # Fallback to EnhancedSynthClient
+        if self._running:
+            synth = EnhancedSynthClient(self.config, verbose=self.verbose)
+            await synth.connect()
+            async for chunk in synth.generate_stream():
+                if not self._running:
+                    break
+                yield chunk
 
     async def stop(self) -> None:
         """Stop the generation stream."""
