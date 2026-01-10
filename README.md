@@ -1,4 +1,4 @@
-# Focus Music PoC
+# Focus Music
 
 A proof-of-concept for generating focus-enhancing music using neural entrainment.
 
