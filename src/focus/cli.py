@@ -421,36 +421,34 @@ async def _run_session(
                     modulated, sample_rate, state=limiter_state
                 )
 
-            # Buffer for fade-out when duration is set
-            if duration:
-                fade_out_buffer.append(modulated.copy())
-                # Keep only enough buffer for fade-out duration
-                total_buffered = sum(len(c) for c in fade_out_buffer)
-                fade_out_samples = int(fade_duration * sample_rate)
-                while total_buffered > fade_out_samples and len(fade_out_buffer) > 1:
-                    old_chunk = fade_out_buffer.pop(0)
-                    total_buffered -= len(old_chunk)
-                    # Write the old chunk that's no longer in fade zone
-                    output.write(old_chunk)
-                    if file_output:
+            # ALWAYS write to real-time output immediately (no buffering delay)
+            output.write(modulated)
+
+            # For file output with duration: buffer the last 5 seconds for fade-out
+            if file_output:
+                if duration:
+                    fade_out_buffer.append(modulated.copy())
+                    # Keep only enough buffer for fade-out duration
+                    total_buffered = sum(len(c) for c in fade_out_buffer)
+                    fade_out_samples = int(fade_duration * sample_rate)
+                    while total_buffered > fade_out_samples and len(fade_out_buffer) > 1:
+                        old_chunk = fade_out_buffer.pop(0)
+                        total_buffered -= len(old_chunk)
+                        # Write the old chunk that's no longer in fade zone
                         file_output.write(old_chunk)
-            else:
-                # No duration limit, write immediately
-                output.write(modulated)
-                if file_output:
+                else:
+                    # No duration limit, write immediately to file
                     file_output.write(modulated)
 
             # Check duration limit
             if duration and total_seconds >= duration:
                 if verbose:
                     click.echo(f"\n   ⏱️  Duration reached ({total_seconds:.1f}s)")
-                # Apply fade-out to buffered chunks
-                if fade_out_buffer:
+                # Apply fade-out to file output's buffered chunks
+                if fade_out_buffer and file_output:
                     combined = np.concatenate(fade_out_buffer, axis=0)
                     faded = apply_fade_out(combined, sample_rate, fade_duration)
-                    output.write(faded)
-                    if file_output:
-                        file_output.write(faded)
+                    file_output.write(faded)
                     fade_out_buffer.clear()
                 break
 
@@ -466,27 +464,26 @@ async def _run_session(
 
             traceback.print_exc()
     finally:
-        # Flush any remaining buffered audio (for Ctrl+C case with duration set)
-        if fade_out_buffer:
+        # Flush any remaining buffered audio to file (for Ctrl+C case with duration set)
+        if fade_out_buffer and file_output:
             combined = np.concatenate(fade_out_buffer, axis=0)
             faded = apply_fade_out(
                 combined, sample_rate, min(fade_duration, len(combined) / sample_rate)
             )
-            output.write(faded)
-            if file_output:
-                file_output.write(faded)
+            file_output.write(faded)
         output.flush()  # Flush leftover samples with fade-out
         output.stop()
         if file_output:
             file_output.stop()
         await client.stop()
         if verbose:
+            buffer_info = f", buffer={output.buffer_seconds:.1f}s"
             underrun_msg = (
                 f", {output.underrun_count} underruns" if output.underrun_count > 0 else ""
             )
             click.echo(
                 f"   ✓ Session ended after {total_seconds:.1f}s "
-                f"({chunk_count} chunks{underrun_msg})"
+                f"({chunk_count} chunks{underrun_msg}{buffer_info})"
             )
 
 
