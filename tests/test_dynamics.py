@@ -105,7 +105,7 @@ class TestApplyLimiter:
         chunk_size = 4800
         audio = create_test_tone(440.0, 0.5, sample_rate, channels=2) * 1.2
 
-        chunks = [audio[i:i+chunk_size] for i in range(0, len(audio), chunk_size)]
+        chunks = [audio[i : i + chunk_size] for i in range(0, len(audio), chunk_size)]
 
         state = None
         outputs = []

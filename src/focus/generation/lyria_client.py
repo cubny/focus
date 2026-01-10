@@ -69,10 +69,7 @@ class LyriaClient:
             )
 
         # Initialize client with v1alpha API version required for Lyria
-        self._client = genai.Client(
-            api_key=api_key,
-            http_options={'api_version': 'v1alpha'}
-        )
+        self._client = genai.Client(api_key=api_key, http_options={"api_version": "v1alpha"})
         self._running = True
 
     async def generate_stream(self) -> AsyncIterator[np.ndarray]:
@@ -131,9 +128,9 @@ class LyriaClient:
                         # Check for audio data in the message
                         # The Lyria API returns audio in server_content.audio_chunks
                         if (
-                            hasattr(message, 'server_content')
+                            hasattr(message, "server_content")
                             and message.server_content
-                            and hasattr(message.server_content, 'audio_chunks')
+                            and hasattr(message.server_content, "audio_chunks")
                             and message.server_content.audio_chunks
                         ):
                             # Get raw audio data from the chunk
@@ -212,11 +209,11 @@ class EnhancedSynthClient:
         # Base frequencies tailored to the profile's BPM/Mood
         self.oscillators = [
             # Freq multiplier, Amplitude, LFO rate, LFO depth, Phase offset
-            (1.0, 0.4, 0.1, 0.002, 0.0),      # Fundamental
-            (1.5, 0.2, 0.15, 0.003, 2.0),     # Perfect fifth
-            (2.0, 0.15, 0.2, 0.004, 4.0),     # Octave
-            (1.01, 0.3, 0.12, 0.002, 1.0),    # Detuned fundamental (chorus effect)
-            (1.99, 0.15, 0.18, 0.003, 5.0),   # Detuned octave
+            (1.0, 0.4, 0.1, 0.002, 0.0),  # Fundamental
+            (1.5, 0.2, 0.15, 0.003, 2.0),  # Perfect fifth
+            (2.0, 0.15, 0.2, 0.004, 4.0),  # Octave
+            (1.01, 0.3, 0.12, 0.002, 1.0),  # Detuned fundamental (chorus effect)
+            (1.99, 0.15, 0.18, 0.003, 5.0),  # Detuned octave
         ]
 
     async def connect(self, api_key: str | None = None) -> None:
@@ -266,7 +263,6 @@ class EnhancedSynthClient:
             stereo = np.tanh(stereo) * 0.8
 
             self._phase += chunk_samples / sample_rate
-
 
             yield stereo.astype(np.float32)
 

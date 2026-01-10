@@ -25,7 +25,6 @@ class AudioGenerator(Protocol):
     async def stop(self) -> None: ...
 
 
-
 @dataclass
 class AudioPipeline:
     """Real-time audio processing pipeline.

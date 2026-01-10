@@ -51,10 +51,7 @@ PROFILES: dict[str, FocusProfile] = {
             "emerging from silence, slowly building, sparse beginning, "
             "gradually introducing elements"
         ),
-        outro_prompt=(
-            "slowly fading, elements dropping away, peaceful resolution, "
-            "gentle ending"
-        ),
+        outro_prompt=("slowly fading, elements dropping away, peaceful resolution, gentle ending"),
     ),
     "light-study": FocusProfile(
         name="light-study",
@@ -118,12 +115,10 @@ PROFILES: dict[str, FocusProfile] = {
         density=0.6,
         brightness=0.7,
         intro_prompt=(
-            "energy igniting, rhythm sparking to life, power building "
-            "from the ground up"
+            "energy igniting, rhythm sparking to life, power building from the ground up"
         ),
         outro_prompt=(
-            "energy channeling down, rhythm easing back, power settling "
-            "into calm strength"
+            "energy channeling down, rhythm easing back, power settling into calm strength"
         ),
     ),
     "uplifting": FocusProfile(

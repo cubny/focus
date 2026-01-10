@@ -103,7 +103,7 @@ class ReverbState:
             CombFilter(
                 delay_samples=int(d * 0.001 * self.sample_rate * scale),
                 feedback=0.84 * self.room_size + 0.1,
-                damping=self.damping
+                damping=self.damping,
             )
             for d in comb_delays_ms
         ]
@@ -112,10 +112,7 @@ class ReverbState:
         allpass_delays_ms = [5.0, 1.7]
 
         self._allpass_filters = [
-            AllpassFilter(
-                delay_samples=max(1, int(d * 0.001 * self.sample_rate)),
-                feedback=0.5
-            )
+            AllpassFilter(delay_samples=max(1, int(d * 0.001 * self.sample_rate)), feedback=0.5)
             for d in allpass_delays_ms
         ]
 

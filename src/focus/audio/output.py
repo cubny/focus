@@ -58,9 +58,7 @@ class AudioOutput:
         self._stream.start()
         self._started = True
 
-    def _audio_callback(
-        self, outdata: np.ndarray, frames: int, time_info, status
-    ) -> None:
+    def _audio_callback(self, outdata: np.ndarray, frames: int, time_info, status) -> None:
         """Callback for sounddevice to get audio data."""
         if status and status.output_underflow:
             self._underrun_count += 1
@@ -139,7 +137,7 @@ class AudioOutput:
             if fade_len > 0 and samples_to_copy > 0:
                 fade = np.linspace(1.0, 0.0, min(256, samples_to_copy))
                 if len(fade) <= samples_to_copy:
-                    padded[samples_to_copy-len(fade):samples_to_copy] *= fade[:, np.newaxis]
+                    padded[samples_to_copy - len(fade) : samples_to_copy] *= fade[:, np.newaxis]
 
             try:
                 self._queue.put(padded, timeout=0.1)
@@ -237,9 +235,7 @@ class FileAudioOutput:
         try:
             from scipy.io import wavfile
         except ImportError:
-            raise ImportError(
-                "scipy is required for file output. Install with: pip install scipy"
-            )
+            raise ImportError("scipy is required for file output. Install with: pip install scipy")
 
         # Concatenate all chunks
         full_audio = np.concatenate(self._buffer, axis=0)

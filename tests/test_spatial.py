@@ -55,10 +55,7 @@ class TestApplyReverb:
 
     def test_chunk_continuity_no_clicks(self, sample_rate):
         """Processing consecutive chunks should not introduce clicks."""
-        chunks = [
-            create_test_tone(440.0, 0.1, sample_rate, channels=1)
-            for _ in range(5)
-        ]
+        chunks = [create_test_tone(440.0, 0.1, sample_rate, channels=1) for _ in range(5)]
 
         state = None
         outputs = []
@@ -145,8 +142,8 @@ class TestApplyStereoWidening:
         """RMS energy should be preserved within tolerance."""
         output = apply_stereo_widening(stereo_audio, width=1.2)
 
-        orig_rms = np.sqrt(np.mean(stereo_audio ** 2))
-        new_rms = np.sqrt(np.mean(output ** 2))
+        orig_rms = np.sqrt(np.mean(stereo_audio**2))
+        new_rms = np.sqrt(np.mean(output**2))
 
         # Should be within 10% of original
         assert abs(new_rms - orig_rms) / orig_rms < 0.1

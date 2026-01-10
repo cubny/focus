@@ -15,6 +15,7 @@ from focus.profiles import FocusProfile, get_profile, list_profiles
 try:
     import numpy as np
     import sounddevice as sd
+
     AUDIO_AVAILABLE = True
 except ImportError:
     AUDIO_AVAILABLE = False
@@ -47,9 +48,7 @@ def show_profiles():
     for p in profiles:
         click.echo(f"\n  {click.style(p.name, fg='cyan', bold=True)}")
         click.echo(f"  {p.description}")
-        click.echo(
-            f"  Modulation: {p.modulation_freq:.0f} Hz @ {p.modulation_depth:.0%} depth"
-        )
+        click.echo(f"  Modulation: {p.modulation_freq:.0f} Hz @ {p.modulation_depth:.0%} depth")
 
     click.echo("\n" + "-" * 60)
     click.echo("\nUsage: focus start --profile <name>\n")
@@ -198,16 +197,18 @@ def start_session(
     click.echo("\n   Press Ctrl+C to stop\n")
 
     try:
-        asyncio.run(_run_session(
-            focus_profile,
-            mock,
-            duration,
-            output,
-            reverb=reverb,
-            stereo_width=stereo_width,
-            limiter=limiter,
-            verbose=verbose
-        ))
+        asyncio.run(
+            _run_session(
+                focus_profile,
+                mock,
+                duration,
+                output,
+                reverb=reverb,
+                stereo_width=stereo_width,
+                limiter=limiter,
+                verbose=verbose,
+            )
+        )
     except KeyboardInterrupt:
         click.echo("\n\n🛑 Session stopped by user")
 
@@ -224,7 +225,7 @@ async def _run_session(
     reverb: bool = True,
     stereo_width: float = 1.2,
     limiter: bool = True,
-    verbose: bool = False
+    verbose: bool = False,
 ):
     """Run the audio generation session."""
     try:
@@ -374,9 +375,7 @@ async def _run_session(
                     fade_progress = 1.0 - (
                         fade_in_samples_remaining / (fade_duration * sample_rate)
                     )
-                    end_progress = fade_progress + chunk_samples / (
-                        fade_duration * sample_rate
-                    )
+                    end_progress = fade_progress + chunk_samples / (fade_duration * sample_rate)
                     t = np.linspace(
                         fade_progress * np.pi / 2,
                         end_progress * np.pi / 2,
@@ -410,11 +409,7 @@ async def _run_session(
 
             # 1. Spatialization (Reverb)
             if reverb:
-                modulated, reverb_state = apply_reverb(
-                    modulated,
-                    sample_rate,
-                    state=reverb_state
-                )
+                modulated, reverb_state = apply_reverb(modulated, sample_rate, state=reverb_state)
 
             # 2. Stereo Widening
             if abs(stereo_width - 1.0) > 0.01:
@@ -423,9 +418,7 @@ async def _run_session(
             # 4. Dynamics (Limiter)
             if limiter:
                 modulated, limiter_state = apply_limiter(
-                    modulated,
-                    sample_rate,
-                    state=limiter_state
+                    modulated, sample_rate, state=limiter_state
                 )
 
             # Buffer for fade-out when duration is set
@@ -470,15 +463,14 @@ async def _run_session(
         if verbose:
             click.echo(f"   ⚠️  Session error: {e}")
             import traceback
+
             traceback.print_exc()
     finally:
         # Flush any remaining buffered audio (for Ctrl+C case with duration set)
         if fade_out_buffer:
             combined = np.concatenate(fade_out_buffer, axis=0)
             faded = apply_fade_out(
-                combined,
-                sample_rate,
-                min(fade_duration, len(combined) / sample_rate)
+                combined, sample_rate, min(fade_duration, len(combined) / sample_rate)
             )
             output.write(faded)
             if file_output:
@@ -490,9 +482,7 @@ async def _run_session(
         await client.stop()
         if verbose:
             underrun_msg = (
-                f", {output.underrun_count} underruns"
-                if output.underrun_count > 0
-                else ""
+                f", {output.underrun_count} underruns" if output.underrun_count > 0 else ""
             )
             click.echo(
                 f"   ✓ Session ended after {total_seconds:.1f}s "

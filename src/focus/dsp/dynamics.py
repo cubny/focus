@@ -93,8 +93,7 @@ def _detect_true_peak(audio: np.ndarray) -> float:
     """
     if audio.ndim == 2:
         # Process each channel and take max
-        peaks = [np.max(np.abs(_oversample_2x(audio[:, ch])))
-                 for ch in range(audio.shape[1])]
+        peaks = [np.max(np.abs(_oversample_2x(audio[:, ch]))) for ch in range(audio.shape[1])]
         return max(peaks)
     else:
         return np.max(np.abs(_oversample_2x(audio)))
