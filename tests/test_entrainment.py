@@ -78,7 +78,6 @@ class TestApplyEntrainment:
 
     def test_phase_continuity_between_chunks(self, sample_rate):
         """Verify no discontinuity when processing consecutive chunks."""
-        chunk_size = 4800  # 0.1 second
         chunks = [
             create_test_tone(440.0, 0.1, sample_rate, channels=1)
             for _ in range(10)

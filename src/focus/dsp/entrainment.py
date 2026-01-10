@@ -4,8 +4,9 @@ This module implements the core DSP algorithm for inducing neural phase locking
 through rapid amplitude modulation in the Beta frequency range (12-20 Hz).
 """
 
-import numpy as np
 from dataclasses import dataclass
+
+import numpy as np
 
 
 @dataclass

@@ -1,7 +1,6 @@
 """Audio output using sounddevice for real-time playback."""
 
 import queue
-import threading
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -29,7 +28,9 @@ class AudioOutput:
     prefill_blocks: int = 10  # Pre-fill this many blocks before starting actual playback
 
     _stream: object = field(default=None, init=False, repr=False)
-    _queue: queue.Queue = field(default_factory=lambda: queue.Queue(maxsize=50), init=False, repr=False)
+    _queue: queue.Queue = field(
+        default_factory=lambda: queue.Queue(maxsize=50), init=False, repr=False
+    )
     _running: bool = field(default=False, init=False)
     _started: bool = field(default=False, init=False)
     _leftover: np.ndarray | None = field(default=None, init=False, repr=False)
@@ -69,10 +70,10 @@ class AudioOutput:
             outdata[:] = data
             self._last_block = data.copy()
             self._fade_position = 0
-            
+
         except queue.Empty:
             self._underrun_count += 1
-            
+
             # Graceful underrun: fade to silence using last block
             if self._last_block is not None and self._fade_position < 4:
                 fade_factor = max(0.0, 1.0 - (self._fade_position + 1) * 0.25)
@@ -102,14 +103,14 @@ class AudioOutput:
         n_complete_blocks = len(audio) // self.blocksize
         for i in range(n_complete_blocks):
             block = audio[i * self.blocksize : (i + 1) * self.blocksize]
-            
+
             # Ensure correct shape and dtype
             if block.ndim == 1:
                 block = np.column_stack([block, block])
             block = block.astype(np.float32)
-            
+
             self._blocks_written += 1
-            
+
             # Use put with timeout to avoid deadlock but maintain backpressure
             try:
                 self._queue.put(block, timeout=0.1)
@@ -124,7 +125,7 @@ class AudioOutput:
 
     def flush(self) -> None:
         """Flush any leftover samples with fade-out.
-        
+
         Call this before stop() to gracefully end playback without clicks.
         """
         if self._leftover is not None and len(self._leftover) > 0:
@@ -132,14 +133,14 @@ class AudioOutput:
             padded = np.zeros((self.blocksize, self.channels), dtype=np.float32)
             samples_to_copy = min(len(self._leftover), self.blocksize)
             padded[:samples_to_copy] = self._leftover[:samples_to_copy]
-            
+
             # Apply fade-out to the padded portion
             fade_len = self.blocksize - samples_to_copy
             if fade_len > 0 and samples_to_copy > 0:
                 fade = np.linspace(1.0, 0.0, min(256, samples_to_copy))
                 if len(fade) <= samples_to_copy:
                     padded[samples_to_copy-len(fade):samples_to_copy] *= fade[:, np.newaxis]
-            
+
             try:
                 self._queue.put(padded, timeout=0.1)
             except queue.Full:
@@ -157,7 +158,7 @@ class AudioOutput:
         self._leftover = None
         self._last_block = None
         self._fade_position = 0
-    
+
     @property
     def underrun_count(self) -> int:
         """Number of buffer underruns detected during playback."""
@@ -202,59 +203,59 @@ class MockAudioOutput:
 @dataclass
 class FileAudioOutput:
     """Audio output to a WAV file.
-    
+
     Collects audio chunks and writes them to a WAV file when stopped.
     """
-    
+
     filepath: str
     sample_rate: int = 48000
     channels: int = 2
-    
+
     _buffer: list = field(default_factory=list, init=False, repr=False)
     _running: bool = field(default=False, init=False)
-    
+
     def start(self) -> None:
         """Start collecting audio."""
         self._running = True
         self._buffer = []
-    
+
     def write(self, audio: np.ndarray) -> None:
         """Add audio data to the buffer.
-        
+
         Args:
             audio: Audio data, shape (samples,) or (samples, channels).
         """
         if self._running:
             self._buffer.append(audio.copy())
-    
+
     def stop(self) -> None:
         """Stop collecting and write to WAV file."""
         self._running = False
         if not self._buffer:
             return
-        
+
         try:
             from scipy.io import wavfile
         except ImportError:
             raise ImportError(
                 "scipy is required for file output. Install with: pip install scipy"
             )
-        
+
         # Concatenate all chunks
         full_audio = np.concatenate(self._buffer, axis=0)
-        
+
         # Convert to int16 for WAV
         audio_int16 = (full_audio * 32767).astype(np.int16)
-        
+
         # Write to file
         wavfile.write(self.filepath, self.sample_rate, audio_int16)
-        
+
         # Clear buffer
         self._buffer = []
-    
+
     def __enter__(self):
         self.start()
         return self
-    
+
     def __exit__(self, *args):
         self.stop()

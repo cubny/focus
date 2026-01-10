@@ -6,14 +6,14 @@ Includes spatial effects and dynamics processing.
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass, field  
+from dataclasses import dataclass, field
 from typing import Protocol
 
 import numpy as np
 
+from focus.dsp.dynamics import LimiterState, apply_limiter
 from focus.dsp.entrainment import ModulationState, apply_entrainment
 from focus.dsp.spatial import ReverbState, apply_reverb, apply_stereo_widening
-from focus.dsp.dynamics import LimiterState, apply_limiter
 from focus.profiles import FocusProfile
 
 
@@ -32,7 +32,7 @@ class AudioPipeline:
 
     Receives audio from a generator, applies neural entrainment,
     spatial effects, dynamics limiting, and outputs to audio callback.
-    
+
     DSP chain order:
     1. Neural entrainment (amplitude modulation)
     2. Spatialization (reverb + stereo widening)
@@ -43,7 +43,7 @@ class AudioPipeline:
     profile: FocusProfile
     output_callback: Callable[[np.ndarray], None]
     sample_rate: int = 48000
-    
+
     # Effect enable flags
     enable_reverb: bool = True
     enable_stereo_widening: bool = True
@@ -73,7 +73,7 @@ class AudioPipeline:
                 break
 
             processed = chunk
-            
+
             # 1. Apply neural entrainment
             processed, self._mod_state = apply_entrainment(
                 processed,
@@ -93,7 +93,7 @@ class AudioPipeline:
                     wet_dry_mix=0.15,
                     state=self._reverb_state,
                 )
-            
+
             if self.enable_stereo_widening and processed.ndim == 2:
                 processed = apply_stereo_widening(processed, width=self.stereo_width)
 

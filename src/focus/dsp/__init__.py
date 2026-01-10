@@ -1,5 +1,10 @@
 """DSP module for neural entrainment and audio processing."""
 
+from focus.dsp.dynamics import (
+    LimiterState,
+    apply_limiter,
+    get_true_peak_db,
+)
 from focus.dsp.entrainment import (
     ModulationState,
     apply_entrainment,
@@ -11,11 +16,6 @@ from focus.dsp.spatial import (
     ReverbState,
     apply_reverb,
     apply_stereo_widening,
-)
-from focus.dsp.dynamics import (
-    LimiterState,
-    apply_limiter,
-    get_true_peak_db,
 )
 
 __all__ = [

@@ -1,8 +1,9 @@
 """FFT analysis for verifying neural entrainment modulation."""
 
+from dataclasses import dataclass
+
 import numpy as np
 from scipy import fft
-from dataclasses import dataclass
 
 
 @dataclass

@@ -1,32 +1,20 @@
 """Command-line interface for Focus music generator."""
 
 import asyncio
-import click
 import sys
-import os
 
-from focus.profiles import get_profile, list_profiles, FocusProfile
+import click
+
+from focus.dsp.dynamics import LimiterState, apply_limiter
+from focus.dsp.entrainment import ModulationState, apply_entrainment, apply_fade_out
+from focus.dsp.spatial import ReverbState, apply_reverb, apply_stereo_widening
 from focus.generation.lyria_client import LyriaConfig, create_client
-from focus.dsp.entrainment import (
-    ModulationState, 
-    apply_entrainment, 
-    apply_fade_in, 
-    apply_fade_out
-)
-from focus.dsp.spatial import (
-    ReverbState,
-    apply_reverb,
-    apply_stereo_widening
-)
-from focus.dsp.dynamics import (
-    LimiterState,
-    apply_limiter
-)
+from focus.profiles import FocusProfile, get_profile, list_profiles
 
 # Check for optional dependencies
 try:
-    import sounddevice as sd
     import numpy as np
+    import sounddevice as sd
     AUDIO_AVAILABLE = True
 except ImportError:
     AUDIO_AVAILABLE = False
@@ -163,7 +151,10 @@ def start_session(
         focus start --frequency 16 --depth 0.3 --mock
     """
     if duration is not None and duration < 60:
-        click.echo("Error: Duration must be at least 60 seconds to allow for intro/outro phases.", err=True)
+        click.echo(
+            "Error: Duration must be at least 60 seconds to allow for intro/outro phases.",
+            err=True,
+        )
         sys.exit(1)
 
     try:
@@ -186,10 +177,19 @@ def start_session(
         )
 
     click.echo(f"\n🎯 Starting focus session: {click.style(focus_profile.name, bold=True)}")
-    click.echo(f"   Modulation: {focus_profile.modulation_freq:.0f} Hz @ {focus_profile.modulation_depth:.0%}")
-    click.echo(f"   Effects: Reverb={'ON' if reverb else 'OFF'}, Width={stereo_width}, Limiter={'ON' if limiter else 'OFF'}")
+    click.echo(
+        f"   Modulation: {focus_profile.modulation_freq:.0f} Hz @ "
+        f"{focus_profile.modulation_depth:.0%}"
+    )
+    click.echo(
+        f"   Effects: Reverb={'ON' if reverb else 'OFF'}, "
+        f"Width={stereo_width}, Limiter={'ON' if limiter else 'OFF'}"
+    )
     if verbose:
-        click.echo(f"   BPM: {focus_profile.bpm}, Density: {focus_profile.density}, Brightness: {focus_profile.brightness}")
+        click.echo(
+            f"   BPM: {focus_profile.bpm}, Density: {focus_profile.density}, "
+            f"Brightness: {focus_profile.brightness}"
+        )
         click.echo(f"   Prompt: {focus_profile.prompt[:60]}...")
     if duration:
         click.echo(f"   Duration: {duration} seconds")
@@ -199,10 +199,10 @@ def start_session(
 
     try:
         asyncio.run(_run_session(
-            focus_profile, 
-            mock, 
-            duration, 
-            output, 
+            focus_profile,
+            mock,
+            duration,
+            output,
             reverb=reverb,
             stereo_width=stereo_width,
             limiter=limiter,
@@ -210,16 +210,16 @@ def start_session(
         ))
     except KeyboardInterrupt:
         click.echo("\n\n🛑 Session stopped by user")
-    
+
     if output:
         click.echo(f"💾 Audio saved to: {output}")
     click.echo("👋 Session ended. Stay focused!\n")
 
 
 async def _run_session(
-    profile: FocusProfile, 
-    use_mock: bool, 
-    duration: int | None, 
+    profile: FocusProfile,
+    use_mock: bool,
+    duration: int | None,
     output_path: str | None = None,
     reverb: bool = True,
     stereo_width: float = 1.2,
@@ -249,7 +249,10 @@ async def _run_session(
         chunk_count = 0
         async for chunk in client.generate_stream():
             chunk_count += 1
-            click.echo(f"  📦 Chunk {chunk_count}: shape={chunk.shape}, range=[{chunk.min():.2f}, {chunk.max():.2f}]")
+            click.echo(
+                f"  📦 Chunk {chunk_count}: shape={chunk.shape}, "
+                f"range=[{chunk.min():.2f}, {chunk.max():.2f}]"
+            )
             if chunk_count >= 10:
                 break
         await client.stop()
@@ -259,11 +262,11 @@ async def _run_session(
     mod_state = ModulationState()
     reverb_state = ReverbState() if reverb else None
     limiter_state = LimiterState(ceiling_linear=0.989) if limiter else None  # -0.1 dBTP
-    
+
     sample_rate = 48000
     chunk_count = 0
     total_seconds = 0.0
-    
+
     # Fade settings (in seconds)
     fade_duration = 5.0
     fade_in_samples_remaining = int(fade_duration * sample_rate)
@@ -291,7 +294,10 @@ async def _run_session(
     if verbose:
         click.echo(f"   🔊 Audio device: {sd.query_devices(sd.default.device[1])['name']}")
         if duration:
-            click.echo(f"   🎵 Musical phases: intro ({intro_duration}s) → main → outro ({outro_duration}s)")
+            click.echo(
+                f"   🎵 Musical phases: intro ({intro_duration}s) → "
+                f"main → outro ({outro_duration}s)"
+            )
 
     # Connect to generator
     await client.connect()
@@ -301,7 +307,7 @@ async def _run_session(
     # Use queue-based output for robust playback
     output = AudioOutput(sample_rate=sample_rate)
     output.start()
-    
+
     # Optional file output
     file_output = None
     if output_path:
@@ -317,28 +323,39 @@ async def _run_session(
             if verbose:
                 # Log amplitude to verify signal presence
                 max_amp = np.max(np.abs(chunk))
-                click.echo(f"   📦 Chunk {chunk_count}: {len(chunk)} samples, max_amp={max_amp:.3f}, phase={current_phase}")
+                click.echo(
+                    f"   📦 Chunk {chunk_count}: {len(chunk)} samples, "
+                    f"max_amp={max_amp:.3f}, phase={current_phase}"
+                )
 
             # Phase transitions for timed sessions
             if duration:
                 # Transition: intro -> main (after intro_duration)
-                if current_phase == "intro" and total_seconds >= intro_duration and not phase_switched_to_main:
+                if (
+                    current_phase == "intro"
+                    and total_seconds >= intro_duration
+                    and not phase_switched_to_main
+                ):
                     current_phase = "main"
                     phase_switched_to_main = True
                     await client.set_prompt(profile.prompt)
                     if verbose:
-                        click.echo(f"   🎵 Phase transition: intro → main")
+                        click.echo("   🎵 Phase transition: intro → main")
 
                 # Transition: main -> outro (outro_duration before end)
                 time_remaining = duration - total_seconds
-                if current_phase == "main" and time_remaining <= outro_duration and not phase_switched_to_outro:
+                if (
+                    current_phase == "main"
+                    and time_remaining <= outro_duration
+                    and not phase_switched_to_outro
+                ):
                     if profile.outro_prompt:
                         current_phase = "outro"
                         phase_switched_to_outro = True
                         outro_full_prompt = f"{profile.outro_prompt}, {profile.prompt}"
                         await client.set_prompt(outro_full_prompt)
                         if verbose:
-                            click.echo(f"   🎵 Phase transition: main → outro")
+                            click.echo("   🎵 Phase transition: main → outro")
 
             # Apply neural entrainment
             modulated, mod_state = apply_entrainment(
@@ -354,8 +371,17 @@ async def _run_session(
                 chunk_samples = len(modulated)
                 if fade_in_samples_remaining >= chunk_samples:
                     # This entire chunk needs fading
-                    fade_progress = 1.0 - (fade_in_samples_remaining / (fade_duration * sample_rate))
-                    t = np.linspace(fade_progress * np.pi / 2, (fade_progress + chunk_samples / (fade_duration * sample_rate)) * np.pi / 2, chunk_samples)
+                    fade_progress = 1.0 - (
+                        fade_in_samples_remaining / (fade_duration * sample_rate)
+                    )
+                    end_progress = fade_progress + chunk_samples / (
+                        fade_duration * sample_rate
+                    )
+                    t = np.linspace(
+                        fade_progress * np.pi / 2,
+                        end_progress * np.pi / 2,
+                        chunk_samples,
+                    )
                     envelope = np.sin(t) ** 2
                     if modulated.ndim == 2:
                         modulated = modulated * envelope[:, np.newaxis]
@@ -364,8 +390,14 @@ async def _run_session(
                     modulated = modulated.astype(np.float32)
                 else:
                     # Partial fade on this chunk
-                    fade_progress = 1.0 - (fade_in_samples_remaining / (fade_duration * sample_rate))
-                    t = np.linspace(fade_progress * np.pi / 2, np.pi / 2, fade_in_samples_remaining)
+                    fade_progress = 1.0 - (
+                        fade_in_samples_remaining / (fade_duration * sample_rate)
+                    )
+                    t = np.linspace(
+                        fade_progress * np.pi / 2,
+                        np.pi / 2,
+                        fade_in_samples_remaining,
+                    )
                     envelope = np.sin(t) ** 2
                     if modulated.ndim == 2:
                         modulated[:fade_in_samples_remaining] *= envelope[:, np.newaxis]
@@ -375,7 +407,7 @@ async def _run_session(
                 fade_in_samples_remaining -= chunk_samples
 
             # --- Phase 3 DSP Chain ---
-            
+
             # 1. Spatialization (Reverb)
             if reverb:
                 modulated, reverb_state = apply_reverb(
@@ -428,7 +460,7 @@ async def _run_session(
                         file_output.write(faded)
                     fade_out_buffer.clear()
                 break
-                
+
             # Yield control to event loop to keep UI responsive
             await asyncio.sleep(0)
 
@@ -443,7 +475,11 @@ async def _run_session(
         # Flush any remaining buffered audio (for Ctrl+C case with duration set)
         if fade_out_buffer:
             combined = np.concatenate(fade_out_buffer, axis=0)
-            faded = apply_fade_out(combined, sample_rate, min(fade_duration, len(combined) / sample_rate))
+            faded = apply_fade_out(
+                combined,
+                sample_rate,
+                min(fade_duration, len(combined) / sample_rate)
+            )
             output.write(faded)
             if file_output:
                 file_output.write(faded)
@@ -453,8 +489,15 @@ async def _run_session(
             file_output.stop()
         await client.stop()
         if verbose:
-            underrun_msg = f", {output.underrun_count} underruns" if output.underrun_count > 0 else ""
-            click.echo(f"   ✓ Session ended after {total_seconds:.1f}s ({chunk_count} chunks{underrun_msg})")
+            underrun_msg = (
+                f", {output.underrun_count} underruns"
+                if output.underrun_count > 0
+                else ""
+            )
+            click.echo(
+                f"   ✓ Session ended after {total_seconds:.1f}s "
+                f"({chunk_count} chunks{underrun_msg})"
+            )
 
 
 @main.command("test-audio")
@@ -504,8 +547,8 @@ def analyze_audio(audio_file: str, expected_freq: float, expected_depth: float):
     Verifies that amplitude modulation is present at the expected frequency.
     """
     try:
-        from scipy.io import wavfile
         import numpy as np
+        from scipy.io import wavfile
     except ImportError:
         click.echo("Error: scipy is required for audio analysis", err=True)
         sys.exit(1)

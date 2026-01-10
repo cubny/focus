@@ -3,12 +3,12 @@
 import numpy as np
 import pytest
 
+from focus.dsp.entrainment import create_test_tone
 from focus.dsp.spatial import (
     ReverbState,
     apply_reverb,
     apply_stereo_widening,
 )
-from focus.dsp.entrainment import create_test_tone
 
 
 class TestApplyReverb:
@@ -55,7 +55,6 @@ class TestApplyReverb:
 
     def test_chunk_continuity_no_clicks(self, sample_rate):
         """Processing consecutive chunks should not introduce clicks."""
-        chunk_size = 4800  # 0.1 second
         chunks = [
             create_test_tone(440.0, 0.1, sample_rate, channels=1)
             for _ in range(5)

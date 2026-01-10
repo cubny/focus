@@ -5,10 +5,10 @@ import pytest
 
 from focus.dsp.dynamics import (
     LimiterState,
-    apply_limiter,
-    get_true_peak_db,
     _db_to_linear,
     _linear_to_db,
+    apply_limiter,
+    get_true_peak_db,
 )
 from focus.dsp.entrainment import create_test_tone
 
@@ -156,7 +156,7 @@ class TestGetTruePeakDb:
         # -1.0, +1.0 will interpolate to values > 1.0 between them
         # Actually let's use a simpler case
         audio = np.array([0.9, -0.9], dtype=np.float32)
-        
+
         # Without oversampling, peak is 0.9
         # With 2x oversampling and linear interpolation, middle sample is 0
         # So true peak should still be 0.9

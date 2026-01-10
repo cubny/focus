@@ -91,7 +91,9 @@ class LyriaClient:
 
             # Connect to Lyria music model
             with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", message="Realtime music generation is experimental")
+                warnings.filterwarnings(
+                    "ignore", message="Realtime music generation is experimental"
+                )
                 async with self._client.aio.live.music.connect(
                     model="models/lyria-realtime-exp",
                 ) as session:
@@ -129,14 +131,14 @@ class LyriaClient:
                         # Check for audio data in the message
                         # The Lyria API returns audio in server_content.audio_chunks
                         if (
-                            hasattr(message, 'server_content') 
-                            and message.server_content 
+                            hasattr(message, 'server_content')
+                            and message.server_content
                             and hasattr(message.server_content, 'audio_chunks')
                             and message.server_content.audio_chunks
                         ):
                             # Get raw audio data from the chunk
                             audio_data = message.server_content.audio_chunks[0].data
-                            
+
                             # Raw 16-bit PCM audio
                             audio_int16 = np.frombuffer(audio_data, dtype=np.int16)
                             audio_float = audio_int16.astype(np.float32) / 32768.0
@@ -153,7 +155,7 @@ class LyriaClient:
                 if self.verbose:
                     print(f"   ⚠️  Lyria model unreachable ({error_msg})")
                     print("   🔄 Falling back to Enhanced Synth engine...")
-                
+
                 # seamless fallback
                 synth = EnhancedSynthClient(self.config, verbose=self.verbose)
                 await synth.connect()
@@ -201,14 +203,13 @@ class EnhancedSynthClient:
         self.verbose = verbose
         self._running = False
         self._phase = 0.0
-        
+
         # Stereo delay buffer for click-free stereo widening
         delay_samples = int(0.02 * config.sample_rate)  # 20ms delay
         self._delay_buffer = np.zeros(delay_samples, dtype=np.float32)
-        
+
         # Oscillator banks for rich texture
         # Base frequencies tailored to the profile's BPM/Mood
-        base_freq = 110.0  # A2
         self.oscillators = [
             # Freq multiplier, Amplitude, LFO rate, LFO depth, Phase offset
             (1.0, 0.4, 0.1, 0.002, 0.0),      # Fundamental
@@ -232,7 +233,7 @@ class EnhancedSynthClient:
         chunk_duration = 0.2  # Short chunks for low latency
         sample_rate = self.config.sample_rate
         chunk_samples = int(chunk_duration * sample_rate)
-        
+
         t_chunk = np.arange(chunk_samples) / sample_rate
 
         while self._running:
@@ -244,7 +245,7 @@ class EnhancedSynthClient:
                 # Apply slow frequency modulation (LFO) for organic movement
                 lfo = 1.0 + lfo_depth * np.sin(2 * np.pi * lfo_rate * current_t + p_offset)
                 freq = 110.0 * mult * lfo
-                
+
                 # Add sine wave
                 mix += amp * np.sin(2 * np.pi * freq * current_t)
 
@@ -252,7 +253,7 @@ class EnhancedSynthClient:
             # Left channel: original mix
             # Right channel: delayed mix using stateful buffer
             left = mix
-            
+
             delay_len = len(self._delay_buffer)
             # Concatenate delay buffer with current mix, then split
             delayed_signal = np.concatenate([self._delay_buffer, mix])
@@ -265,10 +266,10 @@ class EnhancedSynthClient:
             stereo = np.tanh(stereo) * 0.8
 
             self._phase += chunk_samples / sample_rate
-            
-            
+
+
             yield stereo.astype(np.float32)
-            
+
             # Allow other tasks to run, but don't sleep for duration
             # The output stream blocking write provides the backpressure
             await asyncio.sleep(0)
@@ -281,7 +282,9 @@ class EnhancedSynthClient:
         pass  # Synth doesn't support dynamic prompt changes
 
 
-def create_client(config: LyriaConfig, use_mock: bool = False, verbose: bool = False) -> LyriaClient | EnhancedSynthClient:
+def create_client(
+    config: LyriaConfig, use_mock: bool = False, verbose: bool = False
+) -> LyriaClient | EnhancedSynthClient:
     """Create a Lyria client or fallback to Synth.
 
     Args:
@@ -294,5 +297,5 @@ def create_client(config: LyriaConfig, use_mock: bool = False, verbose: bool = F
     """
     if use_mock or not GENAI_AVAILABLE:
         return EnhancedSynthClient(config, verbose=verbose)
-    
+
     return LyriaClient(config, verbose=verbose)
