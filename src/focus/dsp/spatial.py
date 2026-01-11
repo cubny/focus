@@ -9,7 +9,6 @@ OPTIMIZED VERSION: Uses vectorized NumPy operations with scipy for convolution.
 from dataclasses import dataclass, field
 
 import numpy as np
-from scipy import signal
 
 
 @dataclass
