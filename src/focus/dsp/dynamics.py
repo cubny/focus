@@ -102,30 +102,30 @@ def apply_limiter(
         )
 
     ceiling_linear = state.ceiling_linear
-    
+
     is_stereo = audio.ndim == 2
-    
+
     # Get peak per sample (vectorized)
     if is_stereo:
         peaks = np.maximum(np.abs(audio[:, 0]), np.abs(audio[:, 1]))
     else:
         peaks = np.abs(audio)
-    
+
     # Find maximum peak in the chunk
     max_peak = np.max(peaks)
-    
+
     if max_peak <= ceiling_linear:
         # No limiting needed - pass through
         return audio.copy(), state
-    
+
     # Calculate required gain reduction
     # Simple approach: compute single gain for entire chunk based on peak
     required_gain = ceiling_linear / max_peak
-    
+
     # Smooth transition from previous gain
     # Use exponential smoothing over the chunk
     n_samples = len(audio)
-    
+
     if state._gain > required_gain:
         # Need to reduce gain - fast attack
         target_gain = required_gain
@@ -133,27 +133,27 @@ def apply_limiter(
         # Can increase gain - slow release
         alpha = min(1.0, n_samples / state.release_samples)
         target_gain = state._gain + alpha * (required_gain - state._gain)
-    
+
     # Apply gain with linear interpolation for smooth transition
     gain_start = state._gain
     gain_end = min(1.0, target_gain)  # Never amplify above unity
-    
+
     # Create gain envelope
     gain_envelope = np.linspace(gain_start, gain_end, n_samples).astype(np.float32)
-    
+
     # Apply gain
     if is_stereo:
         output = audio * gain_envelope[:, np.newaxis]
     else:
         output = audio * gain_envelope
-    
+
     # Update state
     state._gain = gain_end
     state._envelope = max_peak
-    
+
     # Final safety clip to ceiling
     output = np.clip(output, -ceiling_linear, ceiling_linear)
-    
+
     return output.astype(audio.dtype), state
 
 

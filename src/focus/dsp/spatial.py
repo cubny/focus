@@ -15,7 +15,7 @@ from scipy import signal
 @dataclass
 class ReverbState:
     """Maintains state for the convolution reverb across audio chunks.
-    
+
     Uses a simple algorithmic reverb based on all-pass and comb delay networks,
     but processed in blocks rather than sample-by-sample.
     """
@@ -23,7 +23,7 @@ class ReverbState:
     sample_rate: int = 48000
     room_size: float = 0.3
     damping: float = 0.5
-    
+
     # Delay line buffers
     _delay_buffers: list = field(default_factory=list, init=False, repr=False)
     _delay_indices: list = field(default_factory=list, init=False, repr=False)
@@ -32,24 +32,24 @@ class ReverbState:
 
     def __post_init__(self):
         self._initialize_delays()
-    
+
     def _initialize_delays(self):
         """Initialize delay line buffers."""
         # Delay times in samples (mutually prime for density)
         # These are typical values for a small room reverb
         scale = 0.5 + self.room_size
         delay_ms = [29.7, 37.1, 41.1, 43.7]  # Comb delays
-        
+
         self._delay_buffers = []
         self._delay_indices = []
         self._filter_states = []
-        
+
         for d in delay_ms:
             delay_samples = int(d * 0.001 * self.sample_rate * scale)
             self._delay_buffers.append(np.zeros(delay_samples, dtype=np.float32))
             self._delay_indices.append(0)
             self._filter_states.append(0.0)
-        
+
         self._initialized = True
 
     def reset(self):
@@ -69,44 +69,44 @@ def _process_comb_vectorized(
     damping: float,
 ) -> tuple[np.ndarray, int, float]:
     """Process audio through a comb filter using block processing.
-    
+
     This is more efficient than sample-by-sample when chunk size is reasonable.
     """
     n_samples = len(audio)
     delay_len = len(delay_buffer)
     output = np.zeros(n_samples, dtype=np.float32)
-    
+
     # Process in blocks that fit within the delay buffer
     block_size = min(n_samples, delay_len)
-    
+
     pos = 0
     current_filter_state = filter_state
     current_idx = delay_idx
-    
+
     while pos < n_samples:
         end = min(pos + block_size, n_samples)
         block_len = end - pos
-        
+
         # Read from delay buffer
         read_indices = (current_idx + np.arange(block_len)) % delay_len
         delayed = delay_buffer[read_indices]
-        
+
         # Output is the delayed signal
         output[pos:end] = delayed
-        
+
         # Apply feedback with damping (vectorized low-pass)
         # For simplicity, use single-pole IIR approximation per block
         damped = delayed * (1 - damping) + np.roll(delayed, 1) * damping
         damped[0] = delayed[0] * (1 - damping) + current_filter_state * damping
         current_filter_state = damped[-1]
-        
+
         # Write back to delay buffer
         new_values = audio[pos:end] + damped * feedback
         delay_buffer[read_indices] = new_values
-        
+
         current_idx = (current_idx + block_len) % delay_len
         pos = end
-    
+
     return output, current_idx, current_filter_state
 
 
@@ -120,7 +120,7 @@ def apply_reverb(
 ) -> tuple[np.ndarray, ReverbState]:
     """
     Apply algorithmic reverb to audio for a subtle room ambience.
-    
+
     OPTIMIZED: Uses block-based processing instead of sample-by-sample.
 
     Args:
@@ -136,7 +136,7 @@ def apply_reverb(
     """
     if state is None:
         state = ReverbState(sample_rate=sample_rate, room_size=room_size, damping=damping)
-    
+
     if not state._initialized:
         state._initialize_delays()
 
@@ -149,13 +149,13 @@ def apply_reverb(
         mono = audio.astype(np.float32)
 
     n_samples = len(mono)
-    
+
     # Calculate feedback based on room size
     feedback = 0.84 * state.room_size + 0.1
-    
+
     # Process through parallel comb filters and sum
     wet = np.zeros(n_samples, dtype=np.float32)
-    
+
     for i, (delay_buf, delay_idx, filter_state) in enumerate(
         zip(state._delay_buffers, state._delay_indices, state._filter_states)
     ):
@@ -165,10 +165,10 @@ def apply_reverb(
         wet += comb_out
         state._delay_indices[i] = new_idx
         state._filter_states[i] = new_filter
-    
+
     # Normalize by number of comb filters
     wet /= len(state._delay_buffers)
-    
+
     # Simple all-pass diffusion (single pass with fixed delay)
     # This adds density without the slow sample-by-sample processing
     allpass_delay = int(0.005 * sample_rate)  # 5ms

@@ -96,9 +96,7 @@ class AudioOutput:
         """Called when stream finishes (for debugging)."""
         pass
 
-    def _audio_callback(
-        self, outdata: np.ndarray, frames: int, time_info, status
-    ) -> None:
+    def _audio_callback(self, outdata: np.ndarray, frames: int, time_info, status) -> None:
         """Callback for sounddevice to get audio data.
 
         Implements robust underrun handling:
@@ -209,9 +207,7 @@ class AudioOutput:
             if samples_to_copy > 0:
                 fade_len = min(256, samples_to_copy)
                 fade = np.linspace(1.0, 0.0, fade_len)
-                padded[samples_to_copy - fade_len : samples_to_copy] *= fade[
-                    :, np.newaxis
-                ]
+                padded[samples_to_copy - fade_len : samples_to_copy] *= fade[:, np.newaxis]
 
             try:
                 self._queue.put_nowait(padded)
@@ -342,9 +338,7 @@ class FileAudioOutput:
         try:
             from scipy.io import wavfile
         except ImportError:
-            raise ImportError(
-                "scipy is required for file output. Install with: pip install scipy"
-            )
+            raise ImportError("scipy is required for file output. Install with: pip install scipy")
 
         # Concatenate all chunks
         full_audio = np.concatenate(self._buffer, axis=0)
