@@ -33,6 +33,65 @@ pip install -e ".[dev]"
 export GOOGLE_API_KEY="your-api-key-from-aistudio"
 ```
 
+<details>
+<summary>Troubleshooting the setup</summary>
+
+### "externally-managed-environment" Error
+
+If you see an error message like this:
+
+```
+error: externally-managed-environment
+...
+```
+
+It means that your Python installation is managed by a system package manager (like Homebrew on macOS). To avoid conflicts, `pip` prevents you from installing packages system-wide.
+
+**Solution: Use a Virtual Environment**
+
+The recommended solution is to create a virtual environment. This creates an isolated space for your project's dependencies.
+
+1.  **Create the virtual environment:**
+    ```bash
+    python3 -m venv .venv
+    ```
+
+2.  **Activate it:**
+    ```bash
+    source .venv/bin/activate
+    ```
+
+3.  **Install the package:**
+    ```bash
+    pip install -e ".[dev]"
+    ```
+
+### "File setup.py not found" Error
+
+If you see an error like this:
+```
+ERROR: File "setup.py" not found. Directory cannot be installed in editable mode...
+```
+
+This usually means you are using an old version of `pip` or `python`. This project requires Python 3.12+ and a modern version of `pip`.
+
+**Solution: Update Python and `pip`**
+
+1.  **Check your Python version:**
+    ```bash
+    python3 --version
+    ```
+    If it's not 3.12 or higher, you'll need to upgrade your Python installation.
+
+2.  **Use `python3 -m pip`:**
+    Instead of just `pip`, use `python3 -m pip` to ensure you're using the `pip` associated with your Python 3 installation.
+
+    ```bash
+    python3 -m pip install -e ".[dev]"
+    ```
+
+</details>
+
 ## Usage
 
 ```bash
