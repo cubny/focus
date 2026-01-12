@@ -18,79 +18,115 @@ The system includes professional audio processing to enhance the listening exper
 - **Stereo Widening**: M/S processing for a wider, more immersive soundstage
 - **Safety Limiter**: True Peak limiting prevents digital clipping and ensures consistent volume
 
-## Prerequisites
-- Python 3.12+
-- pip package manager
-- Google Gemini API key (free from [AI Studio](https://aistudio.google.com/))
+## Installation
 
-## Setup
+### Quick Install (Recommended)
+
+Run the installer script to automatically set up Focus Music and its dependencies:
 
 ```bash
-# Install with pip (Python 3.12+ required)
-pip install -e ".[dev]"
+curl -LsSf https://raw.githubusercontent.com/cubny/focus/main/install.sh | bash
+```
 
-# Set your Google API key
-export GOOGLE_API_KEY="your-api-key-from-aistudio"
+This will:
+- Install [uv](https://docs.astral.sh/uv/) (fast Python package manager)
+- Install PortAudio (audio library) if needed
+- Install Focus Music globally
+
+After installation, set your API key and start a session:
+
+```bash
+export GOOGLE_API_KEY="your-api-key"  # Get one at https://aistudio.google.com/
+focus start --profile deep-work
+```
+
+### Manual Installation with uv
+
+If you prefer to install manually:
+
+```bash
+# 1. Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. Install focus as a CLI tool
+uv tool install focus-music
+
+# 3. Set your API key and run
+export GOOGLE_API_KEY="your-api-key"
+focus start --profile deep-work
+```
+
+### One-liner (Try without installing)
+
+```bash
+# Run focus directly without permanent installation
+uvx focus-music start --profile deep-work
 ```
 
 <details>
-<summary>Troubleshooting the setup</summary>
+<summary>🛠️ Developer Setup</summary>
 
-### "externally-managed-environment" Error
+For development, clone the repository and use `uv sync`:
 
-If you see an error message like this:
+```bash
+git clone https://github.com/cubny/focus.git
+cd focus
 
-```
-error: externally-managed-environment
-...
-```
+# Install uv if needed
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-It means that your Python installation is managed by a system package manager (like Homebrew on macOS). To avoid conflicts, `pip` prevents you from installing packages system-wide.
+# Install dependencies and create virtual environment
+uv sync
 
-**Solution: Use a Virtual Environment**
+# Run the CLI
+uv run focus start --profile deep-work
 
-The recommended solution is to create a virtual environment. This creates an isolated space for your project's dependencies.
-
-1.  **Create the virtual environment:**
-    ```bash
-    python3 -m venv .venv
-    ```
-
-2.  **Activate it:**
-    ```bash
-    source .venv/bin/activate
-    ```
-
-3.  **Install the package:**
-    ```bash
-    pip install -e ".[dev]"
-    ```
-
-### "File setup.py not found" Error
-
-If you see an error like this:
-```
-ERROR: File "setup.py" not found. Directory cannot be installed in editable mode...
+# Or activate the virtual environment
+source .venv/bin/activate
+focus start --profile deep-work
 ```
 
-This usually means you are using an old version of `pip` or `python`. This project requires Python 3.12+ and a modern version of `pip`.
+### Running Tests
 
-**Solution: Update Python and `pip`**
+```bash
+uv run pytest
+```
 
-1.  **Check your Python version:**
-    ```bash
-    python3 --version
-    ```
-    If it's not 3.12 or higher, you'll need to upgrade your Python installation.
+### Code Formatting
 
-2.  **Use `python3 -m pip`:**
-    Instead of just `pip`, use `python3 -m pip` to ensure you're using the `pip` associated with your Python 3 installation.
-
-    ```bash
-    python3 -m pip install -e ".[dev]"
-    ```
+```bash
+uv run ruff format src/ tests/
+uv run ruff check --fix src/ tests/
+```
 
 </details>
+
+<details>
+<summary>📦 Alternative: pip installation</summary>
+
+If you prefer using pip directly:
+
+```bash
+# Create a virtual environment (recommended)
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install from PyPI (when published)
+pip install focus-music
+
+# Or install from source
+git clone https://github.com/cubny/focus.git
+cd focus
+pip install -e ".[dev]"
+```
+
+</details>
+
+### Prerequisites
+
+- **macOS** or **Linux** (Windows via WSL)
+- **Google Gemini API key** (free from [AI Studio](https://aistudio.google.com/))
+- Python 3.12+ (automatically installed by uv if missing)
 
 ## Usage
 
@@ -192,11 +228,11 @@ Warm, positive motivation.
 
 ```bash
 # Run tests
-pytest
+uv run pytest
 
 # Format code
-ruff format src/ tests/
-ruff check --fix src/ tests/
+uv run ruff format src/ tests/
+uv run ruff check --fix src/ tests/
 ```
 
 ## Verification
