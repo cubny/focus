@@ -21,9 +21,7 @@ SESSION_MAX_DURATION_SECONDS = 9 * 60  # 9 minutes
 CROSSFADE_DURATION_SECONDS = 3.0  # Seconds to buffer for seamless transition
 
 
-def _apply_crossfade(
-    old_audio: np.ndarray, new_audio: np.ndarray, sample_rate: int
-) -> np.ndarray:
+def _apply_crossfade(old_audio: np.ndarray, new_audio: np.ndarray, sample_rate: int) -> np.ndarray:
     """Apply crossfade between two audio chunks for seamless transition.
 
     Args:
@@ -62,6 +60,7 @@ def _apply_crossfade(
     if overlap_samples < len(new_audio):
         return np.concatenate([blended, new_audio[overlap_samples:]], axis=0)
     return blended
+
 
 try:
     from google import genai
@@ -248,13 +247,10 @@ class LyriaClient:
 
                                     # Buffer tail ONLY when approaching rotation
                                     # to avoid crossfading continuous playback
-                                    time_until_rotation = (
-                                        self.session_duration - elapsed
-                                    )
+                                    time_until_rotation = self.session_duration - elapsed
                                     if time_until_rotation <= 5.0:  # Last 5 seconds
                                         crossfade_samples = int(
-                                            CROSSFADE_DURATION_SECONDS
-                                            * self.config.sample_rate
+                                            CROSSFADE_DURATION_SECONDS * self.config.sample_rate
                                         )
                                         if len(audio_float) >= crossfade_samples:
                                             tail = audio_float[-crossfade_samples:]
@@ -300,8 +296,7 @@ class LyriaClient:
                                 else f"   ⚠️  Lyria connection error: {error_msg}"
                             )
                             print(
-                                f"   🔄 Retrying in {delay:.1f}s "
-                                f"({retry_count}/{max_retries})..."
+                                f"   🔄 Retrying in {delay:.1f}s ({retry_count}/{max_retries})..."
                             )
                         await asyncio.sleep(delay)
                         continue
