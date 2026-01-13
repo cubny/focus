@@ -126,6 +126,12 @@ def show_profiles():
     default=False,
     help="Show detailed debug output",
 )
+@click.option(
+    "--track-duration",
+    type=int,
+    default=9,
+    help="Duration of each track before rotation (1-9 minutes, default: 9)",
+)
 def start_session(
     profile: str,
     frequency: float | None,
@@ -138,6 +144,7 @@ def start_session(
     stereo_width: float,
     limiter: bool,
     verbose: bool,
+    track_duration: int,
 ):
     """Start a focus music session.
 
@@ -207,6 +214,7 @@ def start_session(
                 stereo_width=stereo_width,
                 limiter=limiter,
                 verbose=verbose,
+                track_duration=track_duration,
             )
         )
     except KeyboardInterrupt:
@@ -226,6 +234,7 @@ async def _run_session(
     stereo_width: float = 1.2,
     limiter: bool = True,
     verbose: bool = False,
+    track_duration: int = 9,
 ):
     """Run the audio generation session."""
     try:
@@ -242,7 +251,15 @@ async def _run_session(
         brightness=profile.brightness or 0.5,
     )
 
-    client = create_client(config, use_mock=use_mock, verbose=verbose)
+    # Clamp track duration to valid range (1-9 minutes)
+    track_duration_seconds = max(60, min(9 * 60, track_duration * 60))
+
+    client = create_client(
+        config,
+        use_mock=use_mock,
+        verbose=verbose,
+        session_duration=track_duration_seconds,
+    )
 
     if not AUDIO_AVAILABLE:
         click.echo("⚠️  sounddevice not available, running in test mode")
