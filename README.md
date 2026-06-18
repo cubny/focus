@@ -130,13 +130,39 @@ pip install -e ".[dev]"
 
 ## Usage
 
+The fastest way to start: just run `focus` in a terminal. With no arguments it
+opens an interactive picker — use ↑/↓ (or number keys) to choose a profile and
+Enter to start. No need to memorize profile names or flags.
+
 ```bash
+# Interactive launcher (pick a profile, then play)
+focus
+
 # Start a focus session with default profile
 focus start --profile deep-work
 
 # List available profiles
 focus profiles
+```
 
+### Playback controls
+
+While a session is playing in a terminal, single keys control playback (a status
+line at the bottom shows what's playing and the available keys):
+
+| Key | Action |
+|-----|--------|
+| `space` / `p` | Pause / resume (reconnects with a fresh take on resume) |
+| `n` | Next take — regenerate fresh music in the same profile |
+| `↑` / `↓` (or `+` / `-`) | Volume up / down |
+| `?` | Toggle expanded key help |
+| `q` | Quit |
+| `Ctrl+C` | Hard stop |
+
+These controls activate only when running attached to a terminal; piped or
+recording-only runs (`-o file.wav` in a script) behave exactly as before.
+
+```bash
 # Custom modulation settings
 focus start --frequency 16 --depth 0.3 --prompt "ambient electronic..."
 

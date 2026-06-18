@@ -10,6 +10,7 @@ from focus.dsp.entrainment import ModulationState, apply_entrainment, apply_fade
 from focus.dsp.spatial import ReverbState, apply_reverb, apply_stereo_widening
 from focus.generation.lyria_client import LyriaConfig, create_client
 from focus.profiles import FocusProfile, get_profile, list_profiles
+from focus.ui.transport import KeyboardController, PlaybackState, StatusLine
 
 # Check for optional dependencies
 try:
@@ -21,20 +22,35 @@ except ImportError:
     AUDIO_AVAILABLE = False
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(version="0.1.0")
-def main():
+@click.pass_context
+def main(ctx):
     """Focus - Neural entrainment music generator.
 
     Generate focus-enhancing music using AI (Google Lyria) with
     neural entrainment modulation for improved concentration.
+
+    Run `focus` with no arguments in a terminal to pick a profile interactively.
 
     Quick Usage:\n
         focus start --profile deep-work \n
         focus start --duration 600  # 10 minute session \n
         focus start --output session.wav \n
     """
-    pass
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # Bare invocation: drop into the interactive picker when attached to a
+    # terminal; otherwise (pipes, CI) fall back to the usual help text.
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        from focus.ui.launcher import run_launcher
+
+        choice = run_launcher()
+        if choice:
+            launch_session(profile=choice)
+    else:
+        click.echo(ctx.get_help())
 
 
 @main.command("profiles")
@@ -156,6 +172,41 @@ def start_session(
 
         focus start --frequency 16 --depth 0.3 --mock
     """
+    launch_session(
+        profile=profile,
+        frequency=frequency,
+        depth=depth,
+        prompt=prompt,
+        mock=mock,
+        duration=duration,
+        output=output,
+        reverb=reverb,
+        stereo_width=stereo_width,
+        limiter=limiter,
+        verbose=verbose,
+        track_duration=track_duration,
+    )
+
+
+def launch_session(
+    profile: str,
+    frequency: float | None = None,
+    depth: float | None = None,
+    prompt: str | None = None,
+    mock: bool = False,
+    duration: int | None = None,
+    output: str | None = None,
+    reverb: bool = True,
+    stereo_width: float = 1.2,
+    limiter: bool = True,
+    verbose: bool = False,
+    track_duration: int = 9,
+):
+    """Resolve a profile, apply overrides, and run a session.
+
+    Shared entry point for both the ``start`` command and the bare-``focus``
+    interactive launcher.
+    """
     if duration is not None and duration < 60:
         click.echo(
             "Error: Duration must be at least 60 seconds to allow for intro/outro phases.",
@@ -201,7 +252,10 @@ def start_session(
         click.echo(f"   Duration: {duration} seconds")
     if output:
         click.echo(f"   Output: {output}")
-    click.echo("\n   Press Ctrl+C to stop\n")
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        click.echo("\n   Controls: [space] pause  [n] next take  [↑↓] volume  [?] help  [q] quit\n")
+    else:
+        click.echo("\n   Press Ctrl+C to stop\n")
 
     try:
         asyncio.run(
@@ -244,24 +298,42 @@ async def _run_session(
             click.echo("Error: sounddevice not available", err=True)
             return
 
-    config = LyriaConfig(
-        prompt=profile.prompt,
-        bpm=profile.bpm or 120,
-        density=profile.density or 0.5,
-        brightness=profile.brightness or 0.5,
-    )
+    sample_rate = 48000
 
     # Clamp track duration to valid range (1-9 minutes)
     track_duration_seconds = max(60, min(9 * 60, track_duration * 60))
 
-    client = create_client(
-        config,
-        use_mock=use_mock,
-        verbose=verbose,
-        session_duration=track_duration_seconds,
-    )
+    def build_config(phase: str) -> LyriaConfig:
+        """Build a Lyria config for the given musical phase."""
+        bpm = profile.bpm or 120
+        density = profile.density or 0.5
+        brightness = profile.brightness or 0.5
+        if phase == "intro" and profile.intro_prompt:
+            return LyriaConfig(
+                prompt=f"{profile.intro_prompt}, {profile.prompt}",
+                bpm=bpm,
+                density=max(0.1, density - 0.2),  # Start with lower density
+                brightness=brightness,
+            )
+        if phase == "outro" and profile.outro_prompt:
+            return LyriaConfig(
+                prompt=f"{profile.outro_prompt}, {profile.prompt}",
+                bpm=bpm,
+                density=density,
+                brightness=brightness,
+            )
+        return LyriaConfig(prompt=profile.prompt, bpm=bpm, density=density, brightness=brightness)
+
+    def make_client(phase: str):
+        return create_client(
+            build_config(phase),
+            use_mock=use_mock,
+            verbose=verbose,
+            session_duration=track_duration_seconds,
+        )
 
     if not AUDIO_AVAILABLE:
+        client = make_client("main")
         click.echo("⚠️  sounddevice not available, running in test mode")
         await client.connect()
         chunk_count = 0
@@ -276,12 +348,39 @@ async def _run_session(
         await client.stop()
         return
 
-    # Initialize state
+    # Interactive transport controls (only attached to a real terminal)
+    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    state = None
+    keyboard = None
+    status_line = None
+    if interactive:
+        state = PlaybackState(
+            profile_name=profile.name,
+            modulation_freq=profile.modulation_freq,
+            modulation_depth=profile.modulation_depth,
+            status="connecting",
+        )
+        if not verbose:
+            # The live status line and -v logging both want the bottom line;
+            # when verbose, the logs already convey state, so skip the line.
+            status_line = StatusLine()
+            status_line.start()
+            status_line.render(state)
+
+        # Redraw immediately on each keypress so pause / volume / help toggles
+        # are reflected instantly instead of on the next audio chunk.
+        def _on_key():
+            if status_line is not None:
+                status_line.render(state)
+
+        keyboard = KeyboardController(state, on_change=_on_key)
+        keyboard.start()
+
+    # Initialize DSP state
     mod_state = ModulationState()
     reverb_state = ReverbState() if reverb else None
     limiter_state = LimiterState(ceiling_linear=0.989) if limiter else None  # -0.1 dBTP
 
-    sample_rate = 48000
     chunk_count = 0
     total_seconds = 0.0
 
@@ -298,17 +397,6 @@ async def _run_session(
     phase_switched_to_main = current_phase == "main"
     phase_switched_to_outro = False
 
-    # Build initial prompt with intro modifier if timed session
-    if duration and profile.intro_prompt and current_phase == "intro":
-        initial_prompt = f"{profile.intro_prompt}, {profile.prompt}"
-        config = LyriaConfig(
-            prompt=initial_prompt,
-            bpm=profile.bpm or 120,
-            density=max(0.1, (profile.density or 0.5) - 0.2),  # Start with lower density
-            brightness=profile.brightness or 0.5,
-        )
-        client = create_client(config, use_mock=use_mock, verbose=verbose)
-
     if verbose:
         click.echo(f"   🔊 Audio device: {sd.query_devices(sd.default.device[1])['name']}")
         if duration:
@@ -318,6 +406,7 @@ async def _run_session(
             )
 
     # Connect to generator
+    client = make_client(current_phase)
     await client.connect()
     if verbose:
         click.echo("   ✓ Connected to audio generator")
@@ -332,145 +421,210 @@ async def _run_session(
         file_output = FileAudioOutput(filepath=output_path, sample_rate=sample_rate)
         file_output.start()
 
+    session_complete = False
+
     try:
-        async for chunk in client.generate_stream():
-            chunk_count += 1
-            chunk_seconds = len(chunk) / sample_rate
-            total_seconds += chunk_seconds
+        # Outer loop: each iteration consumes one generator until it ends or an
+        # interactive control (pause / next take) asks us to reconnect.
+        while not session_complete:
+            stream = client.generate_stream()
+            reconnect = False
 
-            if verbose:
-                # Log amplitude to verify signal presence
-                max_amp = np.max(np.abs(chunk))
-                click.echo(
-                    f"   📦 Chunk {chunk_count}: {len(chunk)} samples, "
-                    f"max_amp={max_amp:.3f}, phase={current_phase}"
-                )
+            async for chunk in stream:
+                chunk_count += 1
+                chunk_seconds = len(chunk) / sample_rate
+                total_seconds += chunk_seconds
 
-            # Phase transitions for timed sessions
-            if duration:
-                # Transition: intro -> main (after intro_duration)
-                if (
-                    current_phase == "intro"
-                    and total_seconds >= intro_duration
-                    and not phase_switched_to_main
-                ):
-                    current_phase = "main"
-                    phase_switched_to_main = True
-                    await client.set_prompt(profile.prompt)
-                    if verbose:
-                        click.echo("   🎵 Phase transition: intro → main")
-
-                # Transition: main -> outro (outro_duration before end)
-                time_remaining = duration - total_seconds
-                if (
-                    current_phase == "main"
-                    and time_remaining <= outro_duration
-                    and not phase_switched_to_outro
-                ):
-                    if profile.outro_prompt:
-                        current_phase = "outro"
-                        phase_switched_to_outro = True
-                        outro_full_prompt = f"{profile.outro_prompt}, {profile.prompt}"
-                        await client.set_prompt(outro_full_prompt)
-                        if verbose:
-                            click.echo("   🎵 Phase transition: main → outro")
-
-            # Apply neural entrainment
-            modulated, mod_state = apply_entrainment(
-                chunk,
-                sample_rate,
-                target_freq=profile.modulation_freq,
-                depth=profile.modulation_depth,
-                state=mod_state,
-            )
-
-            # Apply fade-in to early chunks
-            if fade_in_samples_remaining > 0:
-                chunk_samples = len(modulated)
-                if fade_in_samples_remaining >= chunk_samples:
-                    # This entire chunk needs fading
-                    fade_progress = 1.0 - (
-                        fade_in_samples_remaining / (fade_duration * sample_rate)
-                    )
-                    end_progress = fade_progress + chunk_samples / (fade_duration * sample_rate)
-                    t = np.linspace(
-                        fade_progress * np.pi / 2,
-                        end_progress * np.pi / 2,
-                        chunk_samples,
-                    )
-                    envelope = np.sin(t) ** 2
-                    if modulated.ndim == 2:
-                        modulated = modulated * envelope[:, np.newaxis]
-                    else:
-                        modulated = modulated * envelope
-                    modulated = modulated.astype(np.float32)
-                else:
-                    # Partial fade on this chunk
-                    fade_progress = 1.0 - (
-                        fade_in_samples_remaining / (fade_duration * sample_rate)
-                    )
-                    t = np.linspace(
-                        fade_progress * np.pi / 2,
-                        np.pi / 2,
-                        fade_in_samples_remaining,
-                    )
-                    envelope = np.sin(t) ** 2
-                    if modulated.ndim == 2:
-                        modulated[:fade_in_samples_remaining] *= envelope[:, np.newaxis]
-                    else:
-                        modulated[:fade_in_samples_remaining] *= envelope
-                    modulated = modulated.astype(np.float32)
-                fade_in_samples_remaining -= chunk_samples
-
-            # --- Phase 3 DSP Chain ---
-
-            # 1. Spatialization (Reverb)
-            if reverb:
-                modulated, reverb_state = apply_reverb(modulated, sample_rate, state=reverb_state)
-
-            # 2. Stereo Widening
-            if abs(stereo_width - 1.0) > 0.01:
-                modulated = apply_stereo_widening(modulated, width=stereo_width)
-
-            # 4. Dynamics (Limiter)
-            if limiter:
-                modulated, limiter_state = apply_limiter(
-                    modulated, sample_rate, state=limiter_state
-                )
-
-            # ALWAYS write to real-time output immediately (no buffering delay)
-            output.write(modulated)
-
-            # For file output with duration: buffer the last 5 seconds for fade-out
-            if file_output:
-                if duration:
-                    fade_out_buffer.append(modulated.copy())
-                    # Keep only enough buffer for fade-out duration
-                    total_buffered = sum(len(c) for c in fade_out_buffer)
-                    fade_out_samples = int(fade_duration * sample_rate)
-                    while total_buffered > fade_out_samples and len(fade_out_buffer) > 1:
-                        old_chunk = fade_out_buffer.pop(0)
-                        total_buffered -= len(old_chunk)
-                        # Write the old chunk that's no longer in fade zone
-                        file_output.write(old_chunk)
-                else:
-                    # No duration limit, write immediately to file
-                    file_output.write(modulated)
-
-            # Check duration limit
-            if duration and total_seconds >= duration:
                 if verbose:
-                    click.echo(f"\n   ⏱️  Duration reached ({total_seconds:.1f}s)")
-                # Apply fade-out to file output's buffered chunks
-                if fade_out_buffer and file_output:
-                    combined = np.concatenate(fade_out_buffer, axis=0)
-                    faded = apply_fade_out(combined, sample_rate, fade_duration)
-                    file_output.write(faded)
-                    fade_out_buffer.clear()
+                    # Log amplitude to verify signal presence
+                    max_amp = np.max(np.abs(chunk))
+                    click.echo(
+                        f"   📦 Chunk {chunk_count}: {len(chunk)} samples, "
+                        f"max_amp={max_amp:.3f}, phase={current_phase}"
+                    )
+
+                # Phase transitions for timed sessions
+                if duration:
+                    # Transition: intro -> main (after intro_duration)
+                    if (
+                        current_phase == "intro"
+                        and total_seconds >= intro_duration
+                        and not phase_switched_to_main
+                    ):
+                        current_phase = "main"
+                        phase_switched_to_main = True
+                        await client.set_prompt(profile.prompt)
+                        if verbose:
+                            click.echo("   🎵 Phase transition: intro → main")
+
+                    # Transition: main -> outro (outro_duration before end)
+                    time_remaining = duration - total_seconds
+                    if (
+                        current_phase == "main"
+                        and time_remaining <= outro_duration
+                        and not phase_switched_to_outro
+                    ):
+                        if profile.outro_prompt:
+                            current_phase = "outro"
+                            phase_switched_to_outro = True
+                            outro_full_prompt = f"{profile.outro_prompt}, {profile.prompt}"
+                            await client.set_prompt(outro_full_prompt)
+                            if verbose:
+                                click.echo("   🎵 Phase transition: main → outro")
+
+                # Apply neural entrainment
+                modulated, mod_state = apply_entrainment(
+                    chunk,
+                    sample_rate,
+                    target_freq=profile.modulation_freq,
+                    depth=profile.modulation_depth,
+                    state=mod_state,
+                )
+
+                # Apply fade-in to early chunks
+                if fade_in_samples_remaining > 0:
+                    chunk_samples = len(modulated)
+                    if fade_in_samples_remaining >= chunk_samples:
+                        # This entire chunk needs fading
+                        fade_progress = 1.0 - (
+                            fade_in_samples_remaining / (fade_duration * sample_rate)
+                        )
+                        end_progress = fade_progress + chunk_samples / (fade_duration * sample_rate)
+                        t = np.linspace(
+                            fade_progress * np.pi / 2,
+                            end_progress * np.pi / 2,
+                            chunk_samples,
+                        )
+                        envelope = np.sin(t) ** 2
+                        if modulated.ndim == 2:
+                            modulated = modulated * envelope[:, np.newaxis]
+                        else:
+                            modulated = modulated * envelope
+                        modulated = modulated.astype(np.float32)
+                    else:
+                        # Partial fade on this chunk
+                        fade_progress = 1.0 - (
+                            fade_in_samples_remaining / (fade_duration * sample_rate)
+                        )
+                        t = np.linspace(
+                            fade_progress * np.pi / 2,
+                            np.pi / 2,
+                            fade_in_samples_remaining,
+                        )
+                        envelope = np.sin(t) ** 2
+                        if modulated.ndim == 2:
+                            modulated[:fade_in_samples_remaining] *= envelope[:, np.newaxis]
+                        else:
+                            modulated[:fade_in_samples_remaining] *= envelope
+                        modulated = modulated.astype(np.float32)
+                    fade_in_samples_remaining -= chunk_samples
+
+                # --- Phase 3 DSP Chain ---
+
+                # 1. Spatialization (Reverb)
+                if reverb:
+                    modulated, reverb_state = apply_reverb(
+                        modulated, sample_rate, state=reverb_state
+                    )
+
+                # 2. Stereo Widening
+                if abs(stereo_width - 1.0) > 0.01:
+                    modulated = apply_stereo_widening(modulated, width=stereo_width)
+
+                # 4. Dynamics (Limiter)
+                if limiter:
+                    modulated, limiter_state = apply_limiter(
+                        modulated, sample_rate, state=limiter_state
+                    )
+
+                # Output gain (volume) is applied inside AudioOutput, post-limiter
+                if state is not None:
+                    output.set_volume(state.volume)
+
+                # ALWAYS write to real-time output immediately (no buffering delay)
+                output.write(modulated)
+
+                # For file output with duration: buffer the last 5 seconds for fade-out
+                if file_output:
+                    if duration:
+                        fade_out_buffer.append(modulated.copy())
+                        # Keep only enough buffer for fade-out duration
+                        total_buffered = sum(len(c) for c in fade_out_buffer)
+                        fade_out_samples = int(fade_duration * sample_rate)
+                        while total_buffered > fade_out_samples and len(fade_out_buffer) > 1:
+                            old_chunk = fade_out_buffer.pop(0)
+                            total_buffered -= len(old_chunk)
+                            # Write the old chunk that's no longer in fade zone
+                            file_output.write(old_chunk)
+                    else:
+                        # No duration limit, write immediately to file
+                        file_output.write(modulated)
+
+                # Check duration limit
+                if duration and total_seconds >= duration:
+                    if verbose:
+                        click.echo(f"\n   ⏱️  Duration reached ({total_seconds:.1f}s)")
+                    # Apply fade-out to file output's buffered chunks
+                    if fade_out_buffer and file_output:
+                        combined = np.concatenate(fade_out_buffer, axis=0)
+                        faded = apply_fade_out(combined, sample_rate, fade_duration)
+                        file_output.write(faded)
+                        fade_out_buffer.clear()
+                    session_complete = True
+                    break
+
+                # Interactive controls
+                if state is not None:
+                    state.elapsed_seconds = total_seconds
+                    state.buffer_seconds = output.buffer_seconds
+                    state.status = "playing"
+                    if status_line is not None:
+                        status_line.render(state)
+                    if state.quit_requested:
+                        session_complete = True
+                        break
+                    if state.paused or state.skip_requested:
+                        reconnect = True
+                        break
+
+                # Yield control to event loop to keep UI responsive
+                await asyncio.sleep(0)
+
+            # Close the abandoned/finished generator before reconnecting
+            try:
+                await stream.aclose()
+            except Exception:
+                pass
+
+            # End the session unless an interactive control asked to reconnect
+            if session_complete or state is None or not reconnect:
                 break
 
-            # Yield control to event loop to keep UI responsive
-            await asyncio.sleep(0)
+            # Pause: tear the session down (stops burning quota), wait, reconnect
+            if state.paused:
+                output.pause()
+                await client.stop()
+                state.status = "paused"
+                if status_line is not None:
+                    status_line.render(state)
+                while state.paused and not state.quit_requested:
+                    await asyncio.sleep(0.15)
+                    if status_line is not None:
+                        status_line.render(state)
+                if state.quit_requested:
+                    break
+                output.resume()
+
+            # "Next take": force a fresh generation (same profile/phase)
+            state.skip_requested = False
+            state.status = "reconnecting"
+            if status_line is not None:
+                status_line.render(state)
+            await client.stop()
+            client = make_client(current_phase)
+            await client.connect()
+            # Fade the new take in to avoid a hard join
+            fade_in_samples_remaining = int(fade_duration * sample_rate)
 
     except asyncio.CancelledError:
         pass
@@ -481,6 +635,11 @@ async def _run_session(
 
             traceback.print_exc()
     finally:
+        # Restore the terminal before any further output
+        if keyboard is not None:
+            keyboard.stop()
+        if status_line is not None:
+            status_line.finish()
         # Flush any remaining buffered audio to file (for Ctrl+C case with duration set)
         if fade_out_buffer and file_output:
             combined = np.concatenate(fade_out_buffer, axis=0)
