@@ -19,6 +19,16 @@ from dataclasses import dataclass
 VOLUME_STEP = 0.1
 
 
+def _iter_key_events(data: bytes):
+    while data:
+        if data.startswith((b"\x1b[A", b"\x1b[B")):
+            yield data[:3]
+            data = data[3:]
+        else:
+            yield data[:1]
+            data = data[1:]
+
+
 @dataclass
 class PlaybackState:
     """Shared, mutable state between the keyboard reader and the audio loop."""
@@ -104,8 +114,8 @@ class KeyboardController:
             data = os.read(self._fd, 6)
         except (OSError, BlockingIOError):
             return
-        if data:
-            self.state.handle_key(data)
+        for key in _iter_key_events(data):
+            self.state.handle_key(key)
             if self._on_change is not None:
                 self._on_change()
 

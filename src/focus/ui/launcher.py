@@ -6,6 +6,7 @@ remain available via ``focus start ...``.
 """
 
 import os
+import select
 import sys
 
 import click
@@ -16,9 +17,10 @@ from focus.profiles import FocusProfile, list_profiles
 def _getch(fd: int | None = None) -> bytes:
     """Read one keypress (or escape sequence) in cbreak mode.
 
-    Reads the raw fd directly (not a buffered reader): under cbreak with VMIN=1
-    a single ``os.read`` returns a whole escape burst (e.g. ``\\x1b[A`` for an
-    arrow key) in one call, so arrow keys are not mistaken for a bare Escape.
+    Reads the raw fd directly (not a buffered reader). Normal keys are read one
+    byte at a time so already-buffered keystrokes are not coalesced. For Escape,
+    briefly collect the rest of a CSI arrow-key sequence so arrow keys are not
+    mistaken for a bare Escape.
     """
     import termios
     import tty
@@ -27,7 +29,21 @@ def _getch(fd: int | None = None) -> bytes:
     old = termios.tcgetattr(fd)
     try:
         tty.setcbreak(fd)
-        return os.read(fd, 6)
+        key = os.read(fd, 1)
+        if key != b"\x1b":
+            return key
+
+        readable, _, _ = select.select([fd], [], [], 0.01)
+        if not readable:
+            return key
+        prefix = os.read(fd, 1)
+        if prefix != b"[":
+            return key
+
+        readable, _, _ = select.select([fd], [], [], 0.01)
+        if not readable:
+            return key + prefix
+        return key + prefix + os.read(fd, 1)
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
@@ -65,12 +81,14 @@ def run_launcher() -> str | None:
     try:
         while True:
             lines = _menu_lines(profiles, selected)
+            out.write("\x1b[?7l")
             if prev_lines:
                 # Return to the top of the previous block and clear everything
                 # below it, so nothing from the prior frame can ghost through.
                 out.write(f"\x1b[{prev_lines}A")
             out.write("\x1b[J")
             out.write("\n".join(lines) + "\n")
+            out.write("\x1b[?7h")
             out.flush()
             prev_lines = len(lines)
 
@@ -88,5 +106,5 @@ def run_launcher() -> str | None:
                 if 0 <= idx < len(profiles):
                     selected = idx
     finally:
-        out.write("\n")
+        out.write("\x1b[?7h\n")
         out.flush()

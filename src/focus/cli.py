@@ -376,7 +376,13 @@ async def _run_session(
                 status_line.render(state)
 
         keyboard = KeyboardController(state, on_change=_on_key)
-        keyboard.start()
+        try:
+            keyboard.start()
+        except Exception:
+            keyboard.stop()
+            if status_line is not None:
+                status_line.finish()
+            raise
 
     # Initialize DSP state
     mod_state = ModulationState()

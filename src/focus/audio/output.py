@@ -71,6 +71,7 @@ class AudioOutput:
     def start(self) -> None:
         """Prepare for audio output (stream starts when buffer is filled)."""
         self._running = True
+        self._paused = False
         self._stream_active = False
         self._in_underrun = False
         self._underrun_fade_pos = 0
@@ -251,7 +252,7 @@ class AudioOutput:
         """Discard all buffered blocks (used when pausing)."""
         if self._queue is None:
             return
-        while not self._queue.empty():
+        while True:
             try:
                 self._queue.get_nowait()
             except queue.Empty:
@@ -262,7 +263,7 @@ class AudioOutput:
 
         The object stays alive; the next ``write()`` calls re-fill the buffer and
         ``_maybe_start_stream`` recreates the stream once enough is buffered (so
-        resume is click-free, just like initial start). Call ``resume()`` first.
+        resume is click-free, just like initial start). Call ``resume()`` to restart.
         """
         self._paused = True
         if self._stream:
@@ -317,10 +318,11 @@ class MockAudioOutput:
 
     def start(self) -> None:
         self._running = True
+        self._paused = False
         self.written_samples = 0
 
     def write(self, audio: np.ndarray) -> None:
-        if self._running:
+        if self._running and not self._paused:
             self.written_samples += len(audio)
 
     def flush(self) -> None:
