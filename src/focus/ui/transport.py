@@ -17,6 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 VOLUME_STEP = 0.1
+MAX_KEY_READ_BYTES = 6  # Enough for the arrow-key escape sequences handled below.
 
 
 def _iter_key_events(data: bytes):
@@ -107,11 +108,15 @@ class KeyboardController:
         # stop() always restores the terminal even if registration fails.
         self._active = True
         tty.setcbreak(self._fd)
-        self._loop.add_reader(self._fd, self._on_readable)
+        try:
+            self._loop.add_reader(self._fd, self._on_readable)
+        except Exception:
+            self.stop()
+            raise
 
     def _on_readable(self) -> None:
         try:
-            data = os.read(self._fd, 6)
+            data = os.read(self._fd, MAX_KEY_READ_BYTES)
         except (OSError, BlockingIOError):
             return
         for key in _iter_key_events(data):
