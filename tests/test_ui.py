@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover - Windows
 import pytest
 from click.testing import CliRunner
 
-from focus.audio.output import AudioOutput, MockAudioOutput
+from focus.audio.output import SOUNDDEVICE_AVAILABLE, AudioOutput, MockAudioOutput
 from focus.cli import main
 from focus.ui import launcher
 from focus.ui.transport import KeyboardController, PlaybackState, StatusLine, _format_time
@@ -171,6 +171,9 @@ class TestMockAudioOutputControls:
 
 
 class TestAudioOutputControls:
+    @pytest.mark.skipif(
+        not SOUNDDEVICE_AVAILABLE, reason="sounddevice/PortAudio is unavailable in this environment"
+    )
     def test_set_volume_clamps(self):
         out = AudioOutput()
         out.set_volume(2.0)
@@ -178,6 +181,9 @@ class TestAudioOutputControls:
         out.set_volume(-1.0)
         assert out.volume == 0.0
 
+    @pytest.mark.skipif(
+        not SOUNDDEVICE_AVAILABLE, reason="sounddevice/PortAudio is unavailable in this environment"
+    )
     def test_pause_blocks_stream_start(self):
         # While paused, the stream must not (re)start even if buffer fills.
         out = AudioOutput()

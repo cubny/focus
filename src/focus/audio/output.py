@@ -15,7 +15,8 @@ try:
     import sounddevice as sd
 
     SOUNDDEVICE_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError):
+    sd = None
     SOUNDDEVICE_AVAILABLE = False
 
 
