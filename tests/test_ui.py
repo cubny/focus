@@ -27,6 +27,7 @@ requires_pty = pytest.mark.skipif(
 requires_sounddevice = pytest.mark.skipif(
     not SOUNDDEVICE_AVAILABLE, reason="sounddevice/PortAudio is unavailable in this environment"
 )
+READER_STARTUP_DELAY = 0.1
 
 
 class TestPlaybackState:
@@ -111,7 +112,7 @@ class TestStatusLine:
             .replace("\r", "")
             .replace("\x1b[2K", "")
         )
-        assert len(payload) <= 39
+        assert len(payload) <= 39  # production truncates to terminal width minus one
 
     def test_render_brackets_repaint_with_autowrap_toggle(self):
         # The repaint must disable autowrap (DECAWM) and re-enable it, so an
@@ -243,7 +244,7 @@ class TestTerminalReaders:
         t = threading.Thread(target=reader)
         t.start()
         try:
-            time.sleep(0.1)  # let _getch enter cbreak mode and block in read()
+            time.sleep(READER_STARTUP_DELAY)  # let _getch enter cbreak mode and block in read()
             os.write(master, data)
             t.join(timeout=2.0)
         finally:

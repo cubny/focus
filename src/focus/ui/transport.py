@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 VOLUME_STEP = 0.1
-MAX_KEY_READ_BYTES = 3  # Enough for the arrow-key escape sequences handled below.
+MAX_KEY_READ_BYTES = 3  # Enough for arrow-key escape sequences handled by _iter_key_events.
 
 
 def _iter_key_events(data: bytes):

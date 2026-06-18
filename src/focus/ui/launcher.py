@@ -13,6 +13,8 @@ import click
 
 from focus.profiles import FocusProfile, list_profiles
 
+ESCAPE_SEQUENCE_TIMEOUT_SECONDS = 0.01
+
 
 def _getch(fd: int | None = None) -> bytes:
     """Read one keypress (or escape sequence) in cbreak mode.
@@ -33,14 +35,14 @@ def _getch(fd: int | None = None) -> bytes:
         if key != b"\x1b":
             return key
 
-        readable, _, _ = select.select([fd], [], [], 0.01)
+        readable, _, _ = select.select([fd], [], [], ESCAPE_SEQUENCE_TIMEOUT_SECONDS)
         if not readable:
             return key
         prefix = os.read(fd, 1)
         if prefix != b"[":
             return key
 
-        readable, _, _ = select.select([fd], [], [], 0.01)
+        readable, _, _ = select.select([fd], [], [], ESCAPE_SEQUENCE_TIMEOUT_SECONDS)
         if not readable:
             return key + prefix
         return key + prefix + os.read(fd, 1)

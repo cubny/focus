@@ -263,7 +263,8 @@ class AudioOutput:
 
         The object stays alive; the next ``write()`` calls re-fill the buffer and
         ``_maybe_start_stream`` recreates the stream once enough is buffered (so
-        resume is click-free, just like initial start). Call ``resume()`` to restart.
+        resume is click-free, just like initial start). Call ``resume()`` to clear
+        the pause flag; subsequent ``write()`` calls restart the stream lazily.
         """
         self._paused = True
         if self._stream:
