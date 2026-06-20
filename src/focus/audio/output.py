@@ -15,7 +15,8 @@ try:
     import sounddevice as sd
 
     SOUNDDEVICE_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError):
+    sd = None
     SOUNDDEVICE_AVAILABLE = False
 
 
@@ -36,11 +37,13 @@ class AudioOutput:
     blocksize: int = 2048  # ~42ms per block at 48kHz
     buffersize: int = 200  # Queue capacity in blocks (~8.5 seconds at 48kHz)
     minimum_buffer_seconds: float = 3.0  # Pre-fill buffer before starting playback
+    volume: float = 1.0  # Output gain, 0.0-1.0 (attenuation only)
 
     _stream: object = field(default=None, init=False, repr=False)
     _queue: queue.Queue = field(default=None, init=False, repr=False)
     _running: bool = field(default=False, init=False)
     _started: bool = field(default=False, init=False)
+    _paused: bool = field(default=False, init=False)
     _stream_active: bool = field(default=False, init=False)
     _leftover: np.ndarray | None = field(default=None, init=False, repr=False)
     _underrun_count: int = field(default=0, init=False)
@@ -68,6 +71,7 @@ class AudioOutput:
     def start(self) -> None:
         """Prepare for audio output (stream starts when buffer is filled)."""
         self._running = True
+        self._paused = False
         self._stream_active = False
         self._in_underrun = False
         self._underrun_fade_pos = 0
@@ -77,7 +81,7 @@ class AudioOutput:
 
     def _maybe_start_stream(self) -> None:
         """Start the actual audio stream if we have enough buffer pre-filled."""
-        if self._stream_active or not self._running:
+        if self._stream_active or not self._running or self._paused:
             return
 
         # Check if we have enough buffer
@@ -142,6 +146,12 @@ class AudioOutput:
             else:
                 # Silent output after fade completes
                 outdata[:] = 0
+
+        # Final output gain (attenuation only; applied after the DSP limiter so
+        # it can never re-introduce clipping). _last_good_block stays pre-gain
+        # so volume changes don't compound across underrun recovery.
+        if self.volume != 1.0:
+            outdata *= self.volume
 
     def write(self, audio: np.ndarray) -> None:
         """Write audio data to the output buffer.
@@ -230,6 +240,48 @@ class AudioOutput:
         self._recovery_fade_pos = 0
         self._in_underrun = False
 
+    def set_volume(self, volume: float) -> None:
+        """Set the output gain.
+
+        Args:
+            volume: Gain in [0.0, 1.0]. Attenuation only; values are clamped.
+        """
+        self.volume = max(0.0, min(1.0, volume))
+
+    def _drain_queue(self) -> None:
+        """Discard all buffered blocks (used when pausing)."""
+        if self._queue is None:
+            return
+        while True:
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                break
+
+    def pause(self) -> None:
+        """Pause playback by tearing down the stream and dropping the buffer.
+
+        The object stays alive; the next ``write()`` calls re-fill the buffer and
+        ``_maybe_start_stream`` recreates the stream once enough is buffered (so
+        resume is click-free, just like initial start). Call ``resume()`` to clear
+        the pause flag; subsequent ``write()`` calls restart the stream lazily.
+        """
+        self._paused = True
+        if self._stream:
+            self._stream.stop()
+            self._stream.close()
+            self._stream = None
+        self._stream_active = False
+        self._drain_queue()
+        self._leftover = None
+        self._in_underrun = False
+        self._underrun_fade_pos = 0
+        self._recovery_fade_pos = 0
+
+    def resume(self) -> None:
+        """Resume playback. The stream is recreated lazily once the buffer re-fills."""
+        self._paused = False
+
     @property
     def underrun_count(self) -> int:
         """Number of buffer underruns detected during playback."""
@@ -260,15 +312,18 @@ class MockAudioOutput:
         self.sample_rate = sample_rate
         self.channels = channels
         self.written_samples = 0
+        self.volume = 1.0
         self._running = False
+        self._paused = False
         self._underrun_count = 0
 
     def start(self) -> None:
         self._running = True
+        self._paused = False
         self.written_samples = 0
 
     def write(self, audio: np.ndarray) -> None:
-        if self._running:
+        if self._running and not self._paused:
             self.written_samples += len(audio)
 
     def flush(self) -> None:
@@ -276,6 +331,15 @@ class MockAudioOutput:
 
     def stop(self) -> None:
         self._running = False
+
+    def set_volume(self, volume: float) -> None:
+        self.volume = max(0.0, min(1.0, volume))
+
+    def pause(self) -> None:
+        self._paused = True
+
+    def resume(self) -> None:
+        self._paused = False
 
     @property
     def underrun_count(self) -> int:
