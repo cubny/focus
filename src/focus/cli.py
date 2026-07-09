@@ -12,6 +12,9 @@ from focus.generation.lyria_client import LyriaConfig, create_client
 from focus.profiles import FocusProfile, get_profile, list_profiles
 from focus.ui.transport import KeyboardController, PlaybackState, StatusLine
 
+# Spectrum visualizer is optional; imported lazily in _run_session so the CLI
+# still works if numpy/scipy are missing (guarded there).
+
 # Check for optional dependencies
 try:
     import numpy as np
@@ -150,6 +153,12 @@ def show_profiles():
     default=9,
     help="Duration of each track before rotation (1-9 minutes, default: 9)",
 )
+@click.option(
+    "--spectrum/--no-spectrum",
+    is_flag=True,
+    default=True,
+    help="Live audio spectrum visualizer (interactive terminal only, default: on)",
+)
 def start_session(
     profile: str,
     frequency: float | None,
@@ -163,6 +172,7 @@ def start_session(
     limiter: bool,
     verbose: bool,
     track_duration: int,
+    spectrum: bool,
 ):
     """Start a focus music session.
 
@@ -187,6 +197,7 @@ def start_session(
         limiter=limiter,
         verbose=verbose,
         track_duration=track_duration,
+        spectrum=spectrum,
     )
 
 
@@ -203,6 +214,7 @@ def launch_session(
     limiter: bool = True,
     verbose: bool = False,
     track_duration: int = 9,
+    spectrum: bool = True,
 ):
     """Resolve a profile, apply overrides, and run a session.
 
@@ -271,6 +283,7 @@ def launch_session(
                 limiter=limiter,
                 verbose=verbose,
                 track_duration=track_duration,
+                spectrum=spectrum,
             )
         )
     except KeyboardInterrupt:
@@ -291,6 +304,7 @@ async def _run_session(
     limiter: bool = True,
     verbose: bool = False,
     track_duration: int = 9,
+    spectrum: bool = True,
 ):
     """Run the audio generation session."""
     try:
@@ -355,6 +369,8 @@ async def _run_session(
     state = None
     keyboard = None
     status_line = None
+    display = None
+    spectrum_task = None
     if interactive:
         state = PlaybackState(
             profile_name=profile.name,
@@ -363,16 +379,32 @@ async def _run_session(
             status="connecting",
         )
         if not verbose:
-            # The live status line and -v logging both want the bottom line;
-            # when verbose, the logs already convey state, so skip the line.
-            status_line = StatusLine()
-            status_line.start()
-            status_line.render(state)
+            # The live status line and -v logging both want the bottom region;
+            # when verbose, the logs already convey state, so skip the display.
+            if spectrum:
+                # The spectrum display owns the bottom rows and draws the same
+                # status text as its last row (via format_status_line).
+                try:
+                    from focus.analysis.realtime import SpectrumAnalyzer
+                    from focus.ui.spectrum import SpectrumDisplay
+
+                    analyzer = SpectrumAnalyzer(sample_rate=sample_rate)
+                    display = SpectrumDisplay(state, analyzer)
+                    display.start()
+                    display.render()
+                except ImportError:
+                    display = None
+            if display is None:
+                status_line = StatusLine()
+                status_line.start()
+                status_line.render(state)
 
         # Redraw immediately on each keypress so pause / volume / help toggles
         # are reflected instantly instead of on the next audio chunk.
         def _on_key():
-            if status_line is not None:
+            if display is not None:
+                display.render()
+            elif status_line is not None:
                 status_line.render(state)
 
         keyboard = KeyboardController(state, on_change=_on_key)
@@ -380,6 +412,8 @@ async def _run_session(
             keyboard.start()
         except Exception:
             keyboard.stop()
+            if display is not None:
+                display.finish()
             if status_line is not None:
                 status_line.finish()
             raise
@@ -432,6 +466,23 @@ async def _run_session(
     session_complete = False
 
     try:
+        # Drive the spectrum redraw at a fixed frame rate, decoupled from the
+        # irregular arrival of audio chunks. Created inside the try so the
+        # finally block always cancels it and restores the terminal.
+        if display is not None:
+            # Feed the visualizer from the playback tap (what's actually heard),
+            # now that the output stream exists.
+            display.source = output.latest_samples
+
+            async def _spectrum_loop():
+                try:
+                    while state is None or not state.quit_requested:
+                        display.render()
+                        await asyncio.sleep(1.0 / display.fps)
+                except asyncio.CancelledError:
+                    pass
+
+            spectrum_task = asyncio.create_task(_spectrum_loop())
         # Outer loop: each iteration consumes one generator until it ends or an
         # interactive control (pause / next take) asks us to reconnect.
         while not session_complete:
@@ -644,8 +695,16 @@ async def _run_session(
             traceback.print_exc()
     finally:
         # Restore the terminal before any further output
+        if spectrum_task is not None:
+            spectrum_task.cancel()
+            try:
+                await spectrum_task
+            except asyncio.CancelledError:
+                pass
         if keyboard is not None:
             keyboard.stop()
+        if display is not None:
+            display.finish()
         if status_line is not None:
             status_line.finish()
         # Flush any remaining buffered audio to file (for Ctrl+C case with duration set)

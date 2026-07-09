@@ -59,6 +59,14 @@ class AudioOutput:
     _blocks_written: int = field(default=0, init=False)
     _blocks_played: int = field(default=0, init=False)
 
+    # Visualizer tap: a mono ring buffer of the audio actually sent to the
+    # speakers, written from the PortAudio callback and read by the spectrum
+    # renderer on the event-loop thread. Lock-free (visual-only; a torn read is
+    # at most a one-frame glitch) so the callback never blocks.
+    _viz_size: int = field(default=8192, init=False)
+    _viz_ring: np.ndarray | None = field(default=None, init=False, repr=False)
+    _viz_write: int = field(default=0, init=False)
+
     def __post_init__(self):
         if not SOUNDDEVICE_AVAILABLE:
             raise ImportError(
@@ -67,6 +75,7 @@ class AudioOutput:
         self._queue = queue.Queue(maxsize=self.buffersize)
         # Recovery fade-in over ~50ms for smooth transitions
         self._recovery_samples = int(0.05 * self.sample_rate)
+        self._viz_ring = np.zeros(self._viz_size, dtype=np.float32)
 
     def start(self) -> None:
         """Prepare for audio output (stream starts when buffer is filled)."""
@@ -152,6 +161,42 @@ class AudioOutput:
         # so volume changes don't compound across underrun recovery.
         if self.volume != 1.0:
             outdata *= self.volume
+
+        # Capture what's actually being played for the spectrum visualizer.
+        self._capture_visualizer(outdata)
+
+    def _capture_visualizer(self, outdata: np.ndarray) -> None:
+        """Write a mono downmix of the played block into the ring buffer."""
+        ring = self._viz_ring
+        if ring is None:
+            return
+        mono = outdata.mean(axis=1) if outdata.ndim == 2 else outdata
+        n = len(mono)
+        size = self._viz_size
+        w = self._viz_write
+        end = w + n
+        if end <= size:
+            ring[w:end] = mono
+        else:
+            first = size - w
+            ring[w:] = mono[:first]
+            ring[: end - size] = mono[first:]
+        self._viz_write = end % size
+
+    def latest_samples(self, n: int) -> np.ndarray:
+        """Return the most recent ``n`` played mono samples, in order (a copy).
+
+        Safe to call from another thread; reads may momentarily straddle a
+        callback write, which only ever causes a harmless one-frame glitch.
+        """
+        ring = self._viz_ring
+        if ring is None:
+            return np.zeros(n, dtype=np.float32)
+        n = min(n, self._viz_size)
+        w = self._viz_write
+        if w >= n:
+            return ring[w - n : w].copy()
+        return np.concatenate((ring[self._viz_size - (n - w) :], ring[:w]))
 
     def write(self, audio: np.ndarray) -> None:
         """Write audio data to the output buffer.
@@ -277,6 +322,10 @@ class AudioOutput:
         self._in_underrun = False
         self._underrun_fade_pos = 0
         self._recovery_fade_pos = 0
+        # Silence the visualizer tap so the bars fall to the floor while paused
+        # (the callback is torn down here, so it can no longer clear the ring).
+        if self._viz_ring is not None:
+            self._viz_ring[:] = 0.0
 
     def resume(self) -> None:
         """Resume playback. The stream is recreated lazily once the buffer re-fills."""

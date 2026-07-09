@@ -166,7 +166,7 @@ class StatusLine:
     def render(self, state: PlaybackState) -> None:
         if not self._active:
             return
-        line = self._format(state)
+        line = format_status_line(state)
         # Truncate to one less than the terminal width (cosmetic right-edge
         # cleanup). This counts code points, not display columns, so glyphs that
         # render 2 wide (♫, ⏸, ↑↓ on some terminals) can still overflow — hence
@@ -191,20 +191,25 @@ class StatusLine:
             self.stream.flush()
             self._active = False
 
-    @staticmethod
-    def _format(s: PlaybackState) -> str:
-        token = _STATUS_TOKENS.get(s.status, s.status)
-        vol = f"{int(round(s.volume * 100))}%"
-        info = (
-            f"♫ {s.profile_name} · {s.modulation_freq:.0f}Hz @ {s.modulation_depth:.0%}"
-            f"   {token}   {_format_time(s.elapsed_seconds)}"
-            f"   vol {vol}   buf {s.buffer_seconds:.1f}s"
+
+def format_status_line(s: PlaybackState) -> str:
+    """Render the one-line status text shared by the status line and spectrum.
+
+    Public so other displays (e.g. :class:`focus.ui.spectrum.SpectrumDisplay`)
+    can compose it as a row without reaching into private helpers.
+    """
+    token = _STATUS_TOKENS.get(s.status, s.status)
+    vol = f"{int(round(s.volume * 100))}%"
+    info = (
+        f"♫ {s.profile_name} · {s.modulation_freq:.0f}Hz @ {s.modulation_depth:.0%}"
+        f"   {token}   {_format_time(s.elapsed_seconds)}"
+        f"   vol {vol}   buf {s.buffer_seconds:.1f}s"
+    )
+    if s.show_help:
+        hints = (
+            "[space/p] pause  [n] next take  [↑↓ or +/-] volume  "
+            "[?] hide help  [q] quit  [Ctrl+C] stop"
         )
-        if s.show_help:
-            hints = (
-                "[space/p] pause  [n] next take  [↑↓ or +/-] volume  "
-                "[?] hide help  [q] quit  [Ctrl+C] stop"
-            )
-        else:
-            hints = "[space] pause  [n] next  [↑↓] volume  [?] help  [q] quit"
-        return f"{info}   ·   {hints}"
+    else:
+        hints = "[space] pause  [n] next  [↑↓] volume  [?] help  [q] quit"
+    return f"{info}   ·   {hints}"
