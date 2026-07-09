@@ -18,7 +18,13 @@ from focus.audio.output import SOUNDDEVICE_AVAILABLE, AudioOutput, MockAudioOutp
 from focus.cli import main
 from focus.profiles import FocusProfile
 from focus.ui import launcher
-from focus.ui.transport import KeyboardController, PlaybackState, StatusLine, _format_time
+from focus.ui.transport import (
+    KeyboardController,
+    PlaybackState,
+    StatusLine,
+    _format_time,
+    format_status_line,
+)
 
 # The pty-backed tests exercise the raw terminal readers; pty is Unix-only.
 requires_pty = pytest.mark.skipif(
@@ -87,14 +93,14 @@ class TestStatusLine:
 
     def test_format_includes_profile_and_hints(self):
         s = PlaybackState(profile_name="deep-work", modulation_freq=18.0, status="playing")
-        line = StatusLine._format(s)
+        line = format_status_line(s)
         assert "deep-work" in line
         assert "18Hz" in line
         assert "[q] quit" in line
 
     def test_help_toggle_changes_hints(self):
         s = PlaybackState(show_help=True)
-        assert "next take" in StatusLine._format(s)
+        assert "next take" in format_status_line(s)
 
     def test_render_truncates_to_terminal_width(self, monkeypatch):
         # The rendered payload must stay under the terminal width so writing it

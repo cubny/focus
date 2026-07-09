@@ -383,7 +383,7 @@ async def _run_session(
             # when verbose, the logs already convey state, so skip the display.
             if spectrum:
                 # The spectrum display owns the bottom rows and draws the same
-                # status text as its last row (via StatusLine._format).
+                # status text as its last row (via format_status_line).
                 try:
                     from focus.analysis.realtime import SpectrumAnalyzer
                     from focus.ui.spectrum import SpectrumDisplay

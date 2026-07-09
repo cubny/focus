@@ -62,7 +62,9 @@ class SpectrumAnalyzer:
         if n >= self.fft_size:
             self._buf[:] = mono[-self.fft_size :]
         else:
-            self._buf = np.roll(self._buf, -n)
+            # Shift left in place. np.roll would allocate a new array on every
+            # push; numpy handles the overlapping slice copy correctly.
+            self._buf[:-n] = self._buf[n:]
             self._buf[-n:] = mono
 
     def push_silence(self) -> None:

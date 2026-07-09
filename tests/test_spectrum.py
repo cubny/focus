@@ -46,6 +46,20 @@ class TestSpectrumAnalyzer:
         # A far-away low band should be well below the peak.
         assert v[0] < v[peak] - 0.4
 
+    def test_push_shifts_window_in_place_for_small_chunks(self):
+        # Chunks smaller than fft_size shift the rolling window left in place
+        # (an overlapping slice copy); the newest samples must land at the end.
+        a = SpectrumAnalyzer(fft_size=8)
+        a.push(np.arange(1, 6, dtype=np.float32))  # 5 samples into an 8-window
+        assert np.array_equal(a._buf, [0, 0, 0, 1, 2, 3, 4, 5])
+        a.push(np.arange(6, 9, dtype=np.float32))  # 3 more, oldest fall off
+        assert np.array_equal(a._buf, [1, 2, 3, 4, 5, 6, 7, 8])
+
+    def test_push_keeps_tail_of_oversized_chunk(self):
+        a = SpectrumAnalyzer(fft_size=4)
+        a.push(np.arange(10, dtype=np.float32))
+        assert np.array_equal(a._buf, [6, 7, 8, 9])
+
     def test_silence_is_near_zero(self):
         a = SpectrumAnalyzer()
         a.push_silence()
@@ -110,7 +124,7 @@ class TestSpectrumDisplay:
         out = buf.getvalue()
         assert "\x1b[?25l" in out  # cursor hidden on start
         assert "\x1b[?7l" in out and "\x1b[?7h" in out  # autowrap toggled
-        assert "deep-work" in out  # status row reuses StatusLine._format
+        assert "deep-work" in out  # status row reuses format_status_line
         # Second render moves the cursor up over the previously drawn block.
         buf.truncate(0)
         buf.seek(0)
@@ -193,10 +207,41 @@ class TestAudioOutputVisualizerTap:
 
 
 class TestCliGate:
-    def test_spectrum_flag_is_noop_in_non_tty(self):
-        # In a non-tty CliRunner context the visualizer path is skipped entirely;
-        # --spectrum must not crash and must not emit the ANSI block.
-        runner = CliRunner()
-        result = runner.invoke(main, ["start", "--mock", "--spectrum", "--duration", "60"])
-        # Duration < minimum is rejected cleanly; the point is no import/setup crash.
+    @staticmethod
+    def _invoke(monkeypatch, args):
+        """Run the CLI with the session stubbed out (no audio device, no stream)."""
+        captured = {}
+
+        async def fake_run_session(profile, use_mock, duration, output_path=None, **kwargs):
+            captured.update(kwargs)
+
+        monkeypatch.setattr("focus.cli._run_session", fake_run_session)
+        result = CliRunner().invoke(main, args)
+        return result, captured
+
+    def test_spectrum_flag_threads_through(self, monkeypatch):
+        result, captured = self._invoke(monkeypatch, ["start", "--mock", "--spectrum"])
+        assert result.exit_code == 0
+        assert captured["spectrum"] is True
+
+    def test_no_spectrum_flag_threads_through(self, monkeypatch):
+        result, captured = self._invoke(monkeypatch, ["start", "--mock", "--no-spectrum"])
+        assert result.exit_code == 0
+        assert captured["spectrum"] is False
+
+    def test_spectrum_defaults_on(self, monkeypatch):
+        _, captured = self._invoke(monkeypatch, ["start", "--mock"])
+        assert captured["spectrum"] is True
+
+    def test_no_ansi_block_in_non_tty(self, monkeypatch):
+        # CliRunner is not a tty, so the visualizer must never hide the cursor
+        # or emit its in-place block into piped output.
+        result, _ = self._invoke(monkeypatch, ["start", "--mock", "--spectrum"])
         assert "\x1b[?25l" not in result.output
+        assert "\x1b[J" not in result.output
+
+    def test_duration_below_minimum_fast_fails(self):
+        # Guards the real fast-fail path; no session (and no audio) is started.
+        result = CliRunner().invoke(main, ["start", "--mock", "--duration", "59"])
+        assert result.exit_code != 0
+        assert "at least 60 seconds" in result.output

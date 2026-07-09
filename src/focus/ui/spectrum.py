@@ -2,7 +2,7 @@
 
 Bars are drawn with Unicode block glyphs (black & white). Rendering uses the
 same in-place multi-row ANSI pattern as :mod:`focus.ui.launcher` (cursor-up +
-erase-to-end each frame), and reuses :meth:`StatusLine._format` for the bottom
+erase-to-end each frame), and reuses :func:`format_status_line` for the bottom
 status row so the status text stays single-sourced.
 """
 
@@ -14,7 +14,7 @@ import sys
 import numpy as np
 
 from focus.analysis.realtime import SpectrumAnalyzer
-from focus.ui.transport import PlaybackState, StatusLine
+from focus.ui.transport import PlaybackState, format_status_line
 
 # Glyph ramp indexed by eighths of a cell: 0 = empty, 8 = full block.
 _GLYPHS = np.array(list(" ▁▂▃▄▅▆▇█"))
@@ -87,7 +87,7 @@ class SpectrumDisplay:
         cols = max(1, size.columns)
         lines = max(1, size.lines)
 
-        status = StatusLine._format(self.state)
+        status = format_status_line(self.state)
         if len(status) > cols - 1:
             status = status[: cols - 1]
 
