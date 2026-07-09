@@ -197,8 +197,6 @@ class TestCliGate:
         # In a non-tty CliRunner context the visualizer path is skipped entirely;
         # --spectrum must not crash and must not emit the ANSI block.
         runner = CliRunner()
-        result = runner.invoke(
-            main, ["start", "--mock", "--spectrum", "--duration", "60"]
-        )
+        result = runner.invoke(main, ["start", "--mock", "--spectrum", "--duration", "60"])
         # Duration < minimum is rejected cleanly; the point is no import/setup crash.
         assert "\x1b[?25l" not in result.output

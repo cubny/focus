@@ -72,9 +72,7 @@ class SpectrumAnalyzer:
     def _ensure_bands(self, num_bands: int) -> None:
         if self._num_bands == num_bands and self._band_bins is not None:
             return
-        edges = np.logspace(
-            np.log10(self.f_min), np.log10(self.f_max), num_bands + 1
-        )
+        edges = np.logspace(np.log10(self.f_min), np.log10(self.f_max), num_bands + 1)
         idx = np.searchsorted(self._freqs, edges)
         bins: list[tuple[int, int]] = []
         max_bin = len(self._freqs)
