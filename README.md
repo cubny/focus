@@ -1,6 +1,7 @@
 # Focus Music
 
 A proof-of-concept for generating focus-enhancing music using neural entrainment.
+
 ![](https://github.com/cubny/focus/blob/main/rec.gif)
 
 ## How It Works
