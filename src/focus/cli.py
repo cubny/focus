@@ -98,6 +98,12 @@ def show_profiles():
     help="Override modulation depth (0.0-1.0)",
 )
 @click.option(
+    "--band",
+    type=float,
+    default=None,
+    help="Override modulated low-band cutoff in Hz (0 = full-spectrum modulation)",
+)
+@click.option(
     "--prompt",
     type=str,
     default=None,
@@ -163,6 +169,7 @@ def start_session(
     profile: str,
     frequency: float | None,
     depth: float | None,
+    band: float | None,
     prompt: str | None,
     mock: bool,
     duration: int | None,
@@ -188,6 +195,7 @@ def start_session(
         profile=profile,
         frequency=frequency,
         depth=depth,
+        band=band,
         prompt=prompt,
         mock=mock,
         duration=duration,
@@ -205,6 +213,7 @@ def launch_session(
     profile: str,
     frequency: float | None = None,
     depth: float | None = None,
+    band: float | None = None,
     prompt: str | None = None,
     mock: bool = False,
     duration: int | None = None,
@@ -235,13 +244,19 @@ def launch_session(
         sys.exit(1)
 
     # Apply overrides
-    if frequency or depth or prompt:
+    if frequency or depth or band is not None or prompt:
+        if band is None:
+            band_hz = focus_profile.modulation_band_hz
+        else:
+            # 0 (or negative) disables band-limiting -> full-spectrum modulation
+            band_hz = None if band <= 0 else band
         focus_profile = FocusProfile(
             name=focus_profile.name,
             description=focus_profile.description,
             prompt=prompt or focus_profile.prompt,
             modulation_freq=frequency or focus_profile.modulation_freq,
             modulation_depth=depth or focus_profile.modulation_depth,
+            modulation_band_hz=band_hz,
             bpm=focus_profile.bpm,
             density=focus_profile.density,
             brightness=focus_profile.brightness,
@@ -538,6 +553,7 @@ async def _run_session(
                     target_freq=profile.modulation_freq,
                     depth=profile.modulation_depth,
                     state=mod_state,
+                    band_cutoff_hz=profile.modulation_band_hz,
                 )
 
                 # Apply fade-in to early chunks

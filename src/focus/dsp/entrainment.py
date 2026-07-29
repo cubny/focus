@@ -4,16 +4,38 @@ This module implements the core DSP algorithm for inducing neural phase locking
 through rapid amplitude modulation in the Beta frequency range (12-20 Hz).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
+
+# scipy is a core dependency, but guard it so the DSP degrades gracefully to
+# full-spectrum modulation if it is ever missing (mirrors the numpy/genai
+# availability-flag convention used elsewhere in the package).
+try:
+    from scipy.signal import butter, lfilter
+
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+
+# Order of the Butterworth low-pass used to isolate the modulation band.
+_BAND_FILTER_ORDER = 2
 
 
 @dataclass
 class ModulationState:
-    """Maintains phase continuity between audio chunks."""
+    """Maintains phase (and band-split filter) continuity between audio chunks."""
 
     phase: float = 0.0
+
+    # Low-pass filter state for band-limited modulation. These are threaded back
+    # into each call so the band split is click-free across chunk boundaries.
+    _lp_b: np.ndarray | None = field(default=None, repr=False)
+    _lp_a: np.ndarray | None = field(default=None, repr=False)
+    _lp_zi: np.ndarray | None = field(default=None, repr=False)
+    _lp_cutoff: float | None = field(default=None, repr=False)
+    _lp_sr: int | None = field(default=None, repr=False)
+    _lp_channels: int | None = field(default=None, repr=False)
 
     def advance(self, samples: int, freq: float, sample_rate: int) -> None:
         """Advance phase by the given number of samples."""
@@ -22,18 +44,57 @@ class ModulationState:
         self.phase = self.phase % (2.0 * np.pi)
 
 
+def _lowpass_band(
+    audio: np.ndarray, sample_rate: int, cutoff_hz: float, state: ModulationState
+) -> np.ndarray:
+    """Return the low-frequency band of ``audio`` using a stateful Butterworth filter.
+
+    Filter coefficients and delay state live on ``state`` so the split stays
+    continuous (no clicks) across chunk boundaries.
+    """
+    channels = audio.shape[1] if audio.ndim == 2 else 1
+
+    needs_init = (
+        state._lp_zi is None
+        or state._lp_cutoff != cutoff_hz
+        or state._lp_sr != sample_rate
+        or state._lp_channels != channels
+    )
+    if needs_init:
+        nyquist = 0.5 * sample_rate
+        wn = min(max(cutoff_hz / nyquist, 1e-4), 0.99)
+        b, a = butter(_BAND_FILTER_ORDER, wn, btype="low")
+        state._lp_b = b
+        state._lp_a = a
+        state._lp_cutoff = cutoff_hz
+        state._lp_sr = sample_rate
+        state._lp_channels = channels
+        zi_len = max(len(a), len(b)) - 1
+        if audio.ndim == 2:
+            state._lp_zi = np.zeros((zi_len, channels), dtype=np.float64)
+        else:
+            state._lp_zi = np.zeros(zi_len, dtype=np.float64)
+
+    low, state._lp_zi = lfilter(state._lp_b, state._lp_a, audio, axis=0, zi=state._lp_zi)
+    return low
+
+
 def apply_entrainment(
     audio: np.ndarray,
     sample_rate: int,
     target_freq: float = 15.0,
-    depth: float = 0.3,
+    depth: float = 0.15,
     state: ModulationState | None = None,
+    band_cutoff_hz: float | None = 500.0,
 ) -> tuple[np.ndarray, ModulationState]:
     """
     Apply amplitude modulation for neural entrainment.
 
-    The modulation creates a subtle "tremolo" effect that oscillates at the
-    target frequency, inducing neural phase locking in the listener.
+    By default the modulation is *band-limited*: only the low-frequency band
+    (below ``band_cutoff_hz``) is amplitude-modulated, while the mids/highs that
+    carry the perceived melody pass through untouched. This keeps the
+    entrainment pulse working in the background (felt as gentle rhythmic energy)
+    without the whole mix audibly "throbbing" as a tremolo.
 
     Args:
         audio: Input audio array, shape (samples,) for mono or (samples, channels) for stereo.
@@ -43,9 +104,11 @@ def apply_entrainment(
                      Higher frequencies (18-20 Hz) for intense focus, lower (12-14 Hz) for
                      light concentration.
         depth: Modulation depth from 0.0 (no effect) to 1.0 (full modulation).
-               Recommended range is 0.2-0.4 for noticeable but non-distracting effect.
-        state: Optional state object for phase continuity between chunks.
+               Recommended range is ~0.1-0.2 for a subtle, non-distracting effect.
+        state: Optional state object for phase (and filter) continuity between chunks.
                Pass the returned state to subsequent calls to prevent clicks.
+        band_cutoff_hz: Upper edge of the modulated low band in Hz. Set to ``None``
+                        (or if scipy is unavailable) to modulate the full spectrum.
 
     Returns:
         Tuple of (modulated_audio, state). The state should be passed to the next
@@ -54,7 +117,7 @@ def apply_entrainment(
     Example:
         >>> state = ModulationState()
         >>> for chunk in audio_chunks:
-        ...     modulated, state = apply_entrainment(chunk, 48000, 15.0, 0.3, state)
+        ...     modulated, state = apply_entrainment(chunk, 48000, 15.0, 0.15, state)
         ...     play(modulated)
     """
     if state is None:
@@ -66,17 +129,25 @@ def apply_entrainment(
     t = np.arange(n_samples) / sample_rate
     phase_array = 2.0 * np.pi * target_freq * t + state.phase
 
-    # Create modulation envelope: oscillates between (1-depth) and 1.0
-    # Using (1 - depth/2) + (depth/2) * cos(...) gives range [1-depth, 1]
-    # This ensures we only reduce volume, never amplify
+    # Create modulation envelope: oscillates between (1-depth) and 1.0.
+    # (1 - depth) + depth * (0.5 * (1 + cos(...))) gives range [1-depth, 1],
+    # so we only ever reduce volume, never amplify.
     modulator = (1.0 - depth) + depth * (0.5 * (1.0 + np.cos(phase_array)))
 
     # Reshape modulator for stereo audio
     if audio.ndim == 2:
         modulator = modulator[:, np.newaxis]
 
-    # Apply modulation
-    modulated = audio * modulator
+    use_band = band_cutoff_hz is not None and SCIPY_AVAILABLE and depth > 0.0 and n_samples > 0
+    if use_band:
+        # Split into the low modulation band and the untouched remainder, then
+        # modulate only the low band and recombine.
+        low = _lowpass_band(audio, sample_rate, band_cutoff_hz, state)
+        rest = audio - low
+        modulated = low * modulator + rest
+    else:
+        # Full-spectrum modulation (fallback when band-limiting is disabled).
+        modulated = audio * modulator
 
     # Update state for next chunk
     state.advance(n_samples, target_freq, sample_rate)

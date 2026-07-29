@@ -66,10 +66,31 @@ class TestApplyEntrainment:
         output, _ = apply_entrainment(mono_audio, sample_rate, depth=0.0)
         np.testing.assert_array_almost_equal(output, mono_audio)
 
-    def test_output_amplitude_reduced(self, mono_audio, sample_rate):
-        """With depth > 0, output should never exceed input amplitude."""
-        output, _ = apply_entrainment(mono_audio, sample_rate, depth=0.5)
+    def test_output_amplitude_reduced_full_spectrum(self, mono_audio, sample_rate):
+        """Full-spectrum modulation only ever attenuates (never amplifies)."""
+        output, _ = apply_entrainment(mono_audio, sample_rate, depth=0.5, band_cutoff_hz=None)
         assert np.max(np.abs(output)) <= np.max(np.abs(mono_audio)) + 1e-6
+
+    def test_output_amplitude_bounded_band_limited(self, mono_audio, sample_rate):
+        """Band-limited modulation may overshoot slightly but stays well bounded."""
+        output, _ = apply_entrainment(mono_audio, sample_rate, depth=0.5, band_cutoff_hz=500.0)
+        # A phase-shifted low band can nudge the peak up a touch; the downstream
+        # limiter handles it. Guard against runaway gain only.
+        assert np.max(np.abs(output)) <= np.max(np.abs(mono_audio)) * 1.1
+
+    def test_high_frequency_preserved_band_limited(self, sample_rate):
+        """A tone above the modulation band passes nearly unmodulated."""
+        tone = create_test_tone(5000.0, 1.0, sample_rate, channels=1)
+        band_out, _ = apply_entrainment(
+            tone, sample_rate, target_freq=15.0, depth=0.5, band_cutoff_hz=500.0
+        )
+        full_out, _ = apply_entrainment(
+            tone, sample_rate, target_freq=15.0, depth=0.5, band_cutoff_hz=None
+        )
+        band_diff = np.sqrt(np.mean((band_out - tone) ** 2))
+        full_diff = np.sqrt(np.mean((full_out - tone) ** 2))
+        # Band-limited leaves the high tone far more intact than full-spectrum.
+        assert band_diff < full_diff * 0.1
 
     def test_returns_state_for_continuity(self, mono_audio, sample_rate):
         _, state = apply_entrainment(mono_audio, sample_rate)
