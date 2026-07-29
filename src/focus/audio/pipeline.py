@@ -80,6 +80,7 @@ class AudioPipeline:
                 target_freq=self.profile.modulation_freq,
                 depth=self.profile.modulation_depth,
                 state=self._mod_state,
+                band_cutoff_hz=self.profile.modulation_band_hz,
             )
 
             # 2. Apply spatialization

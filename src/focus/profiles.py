@@ -22,6 +22,10 @@ class FocusProfile:
     modulation_freq: float  # Hz (12-20 for Beta waves)
     modulation_depth: float  # 0.0-1.0
 
+    # Upper edge (Hz) of the low band that gets amplitude-modulated. Only this
+    # band pulses, so the effect stays subtle; None modulates the full spectrum.
+    modulation_band_hz: float | None = 500.0
+
     # Optional Lyria parameters
     bpm: int | None = None
     density: float | None = None  # 0.0-1.0
@@ -43,7 +47,7 @@ PROFILES: dict[str, FocusProfile] = {
             "subtle evolving textures, hypnotic rhythm"
         ),
         modulation_freq=18.0,  # High Beta for intense focus
-        modulation_depth=0.35,
+        modulation_depth=0.16,
         bpm=120,
         density=0.4,
         brightness=0.3,
@@ -62,7 +66,7 @@ PROFILES: dict[str, FocusProfile] = {
             "cozy atmosphere, slow tempo"
         ),
         modulation_freq=12.0,  # Low Beta for relaxed attention
-        modulation_depth=0.25,
+        modulation_depth=0.13,
         bpm=85,
         density=0.3,
         brightness=0.5,
@@ -78,7 +82,7 @@ PROFILES: dict[str, FocusProfile] = {
             "predictable progression, subtle pink noise undertone"
         ),
         modulation_freq=15.0,  # Mid Beta
-        modulation_depth=0.40,  # Slightly stronger modulation
+        modulation_depth=0.20,  # Slightly stronger modulation
         bpm=128,
         density=0.5,
         brightness=0.4,
@@ -94,7 +98,7 @@ PROFILES: dict[str, FocusProfile] = {
             "dreamy textures, organic sounds"
         ),
         modulation_freq=10.0,  # Alpha-Beta border for creative state
-        modulation_depth=0.20,
+        modulation_depth=0.12,
         bpm=90,
         density=0.25,
         brightness=0.6,
@@ -110,7 +114,7 @@ PROFILES: dict[str, FocusProfile] = {
             "dynamic tension, forward momentum, bold synthesis"
         ),
         modulation_freq=20.0,  # High Beta for maximum alertness
-        modulation_depth=0.40,
+        modulation_depth=0.20,
         bpm=140,
         density=0.6,
         brightness=0.7,
@@ -130,7 +134,7 @@ PROFILES: dict[str, FocusProfile] = {
             "positive energy, gentle euphoria, inspiring textures"
         ),
         modulation_freq=14.0,  # Mid Beta for balanced, positive focus
-        modulation_depth=0.30,
+        modulation_depth=0.15,
         bpm=110,
         density=0.45,
         brightness=0.8,
